@@ -1,0 +1,125 @@
+require("dotenv").config();
+
+const path = require("path");
+const express = require("express");
+
+const { extractRequestToken } = require("./auth/login");
+const { exchangeRequestToken } = require("./auth/token");
+
+function createLogger(baseLogger = console) {
+  return {
+    info: (payload, message) => baseLogger.log(message, payload),
+    warn: (payload, message) => baseLogger.warn(message, payload),
+    error: (payload, message) => baseLogger.error(message, payload),
+  };
+}
+
+async function handleZerodhaCallback({
+  query,
+  logger = createLogger(),
+  onTokenReceived,
+} = {}) {
+  const tokenHandler =
+    typeof onTokenReceived === "function" ? onTokenReceived : async () => undefined;
+  const requestToken = extractRequestToken(query);
+
+  logger.info(
+    { requestToken },
+    "Received Zerodha request token",
+  );
+
+  await tokenHandler(requestToken);
+
+  return {
+    message: "Request token captured successfully",
+    requestToken,
+  };
+}
+
+function createApp({ logger = createLogger(), onTokenReceived } = {}) {
+  const app = express();
+
+  app.get("/", async (req, res) => {
+    try {
+      const response = await handleZerodhaCallback({
+        query: req.query,
+        logger,
+        onTokenReceived,
+      });
+
+      res.status(200).json(response);
+    } catch (error) {
+      logger.error(
+        { error: error.message },
+        "Failed to capture Zerodha request token",
+      );
+      res.status(400).json({
+        error: error.message,
+      });
+    }
+  });
+
+  return app;
+}
+
+async function defaultTokenHandler(requestToken, logger) {
+  if (process.env.ZERODHA_AUTO_EXCHANGE_ON_CALLBACK !== "true") {
+    return;
+  }
+
+  const tokenPath =
+    process.env.ZERODHA_TOKEN_PATH ||
+    path.resolve(process.cwd(), "tmp", "kite-session.json");
+
+  await exchangeRequestToken({
+    apiKey: process.env.ZERODHA_API_KEY,
+    apiSecret: process.env.ZERODHA_API_SECRET,
+    requestToken,
+    tokenPath,
+    logger,
+  });
+
+  logger.info(
+    { tokenPath },
+    "Persisted Zerodha access token after callback exchange",
+  );
+}
+
+function startServer({
+  port = Number(process.env.PORT) || 3000,
+  logger = createLogger(),
+  onTokenReceived,
+} = {}) {
+  const app = createApp({
+    logger,
+    onTokenReceived:
+      onTokenReceived ||
+      ((requestToken) => defaultTokenHandler(requestToken, logger)),
+  });
+
+  return new Promise((resolve) => {
+    const server = app.listen(port, () => {
+      logger.info(
+        { port },
+        "Zerodha callback server listening",
+      );
+      resolve(server);
+    });
+  });
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error("Failed to start Zerodha callback server", {
+      error: error.message,
+    });
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  createApp,
+  createLogger,
+  handleZerodhaCallback,
+  startServer,
+};

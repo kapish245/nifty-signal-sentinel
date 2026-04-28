@@ -1,0 +1,32 @@
+{
+  "name": "nifty-signal-sentinel",
+  "version": "1.0.0",
+  "description": "Production-oriented Nifty 50 trading scanner built on Zerodha Kite Connect",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "scanner:once": "node src/runner.js --once",
+    "scanner:scheduler": "node src/runner.js",
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch",
+    "test:live": "RUN_LIVE_KITE_TESTS=true jest --runInBand tests/api.test.js"
+  },
+  "keywords": [
+    "zerodha",
+    "kite-connect",
+    "nodejs",
+    "trading"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "axios": "^1.9.0",
+    "dotenv": "^16.4.5",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
