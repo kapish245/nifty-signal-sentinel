@@ -3,3 +3,4 @@ coverage
 tmp
 # .env
 npm-debug.log*
+.env
