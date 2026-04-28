@@ -6,6 +6,8 @@ const { detectVolumeTrend } = require("../indicators/volume");
 const { detectTrend } = require("../indicators/trend");
 const { evaluateSignal } = require("../signals/signalEngine");
 
+const MIN_REQUIRED_CANDLES = 50;
+
 function requireNonEmptyString(value, fieldName) {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`${fieldName} is required`);
@@ -24,12 +26,13 @@ function validateIndicatorPayload(indicators) {
 
 function createDefaultLogger() {
   return {
+    warn: () => undefined,
     error: () => undefined,
   };
 }
 
 function getDefaultLookbackMinutes(interval) {
-  return interval === "5minute" ? 250 : 50;
+  return interval === "5minute" ? 600 : 50;
 }
 
 function deriveMockOiSignal(priceTrend) {
@@ -67,6 +70,15 @@ function createRealIndicatorProvider({
         instrumentToken: ltpSnapshot?.instrumentToken,
       },
     );
+
+    if (candles.length < MIN_REQUIRED_CANDLES) {
+      return {
+        candles,
+        indicators: null,
+        reason: "INSUFFICIENT_DATA",
+      };
+    }
+
     const closePrices = candles.map((candle) => candle.close);
     const rsi = calculateRSI(closePrices);
     const { ema20, ema50 } = calculateEmaPair(closePrices);
@@ -78,12 +90,77 @@ function createRealIndicatorProvider({
     });
 
     return {
-      priceTrend,
-      emaAlignment,
-      rsi,
-      volume,
-      oiSignal: deriveMockOiSignal(priceTrend),
+      candles,
+      indicators: {
+        priceTrend,
+        emaAlignment,
+        rsi,
+        volume,
+        oiSignal: deriveMockOiSignal(priceTrend),
+      },
     };
+  };
+}
+
+function createSafeSignal({
+  symbol,
+  ltp,
+  reason,
+  receivedCandles = 0,
+  requiredCandles = MIN_REQUIRED_CANDLES,
+  logger,
+  error,
+} = {}) {
+  if (reason === "INSUFFICIENT_DATA") {
+    logger.warn(
+      {
+        type: "INSUFFICIENT_CANDLES",
+        symbol,
+        received: receivedCandles,
+        required: requiredCandles,
+      },
+      "Insufficient candles for signal generation",
+    );
+  } else if (error) {
+    logger.error(
+      {
+        error: error.message,
+        symbol,
+      },
+      "Falling back to safe NO_TRADE signal",
+    );
+  }
+
+  return {
+    symbol,
+    ltp,
+    signal: "NO_TRADE",
+    reason,
+    indicators: null,
+    meta: {
+      receivedCandles,
+      requiredCandles,
+    },
+  };
+}
+
+function normalizeIndicatorResult(result) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    throw new Error("Indicator provider must return an object");
+  }
+
+  if (Array.isArray(result.candles)) {
+    return {
+      candles: result.candles,
+      indicators: result.indicators,
+      reason: result.reason,
+    };
+  }
+
+  return {
+    candles: null,
+    indicators: validateIndicatorPayload(result),
+    reason: null,
   };
 }
 
@@ -134,9 +211,10 @@ function createSignalService({
       }
 
       let indicators;
+      let indicatorResult;
 
       try {
-        indicators = validateIndicatorPayload(
+        indicatorResult = normalizeIndicatorResult(
           await resolvedIndicatorProvider({
             symbol: normalizedSymbol,
             ltp: ltpSnapshot.lastPrice,
@@ -144,12 +222,30 @@ function createSignalService({
           }),
         );
       } catch (error) {
-        logger.error(
-          { error: error.message, symbol: normalizedSymbol },
-          "Failed to compute signal indicators",
-        );
-        throw new Error(`Failed to compute indicators: ${error.message}`);
+        return createSafeSignal({
+          symbol: normalizedSymbol,
+          ltp: ltpSnapshot.lastPrice,
+          reason: "INDICATOR_ERROR",
+          logger,
+          error,
+        });
       }
+
+      if (
+        indicatorResult.reason === "INSUFFICIENT_DATA" ||
+        (Array.isArray(indicatorResult.candles) &&
+          indicatorResult.candles.length < MIN_REQUIRED_CANDLES)
+      ) {
+        return createSafeSignal({
+          symbol: normalizedSymbol,
+          ltp: ltpSnapshot.lastPrice,
+          reason: "INSUFFICIENT_DATA",
+          receivedCandles: indicatorResult.candles?.length || 0,
+          logger,
+        });
+      }
+
+      indicators = validateIndicatorPayload(indicatorResult.indicators);
 
       return {
         symbol: normalizedSymbol,
@@ -198,4 +294,5 @@ module.exports = {
   createRealIndicatorProvider,
   deriveMockOiSignal,
   getDefaultLookbackMinutes,
+  MIN_REQUIRED_CANDLES,
 };

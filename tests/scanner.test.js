@@ -1,4 +1,7 @@
-const { createScannerService } = require("../src/scanner/scannerService");
+const {
+  createScannerService,
+  isFatalScanError,
+} = require("../src/scanner/scannerService");
 
 describe("scannerService", () => {
   it("scans multiple stocks and returns only HOLD and SELL signals", async () => {
@@ -41,6 +44,7 @@ describe("scannerService", () => {
     expect(signalService.getSignal).toHaveBeenNthCalledWith(3, "NSE:RELIANCE");
     expect(result).toEqual({
       scannedCount: 3,
+      requestedCount: 3,
       matches: [
         {
           symbol: "NSE:INFY",
@@ -56,6 +60,7 @@ describe("scannerService", () => {
         },
       ],
       failures: [],
+      aborted: false,
     });
     expect(signalLogger.logSignal).toHaveBeenCalledTimes(2);
     expect(signalLogger.logSignal).toHaveBeenNthCalledWith(1, result.matches[0]);
@@ -72,7 +77,7 @@ describe("scannerService", () => {
           ltp: 1500,
           indicators: { rsi: 61 },
         })
-        .mockRejectedValueOnce(new Error("Invalid session for symbol"))
+        .mockRejectedValueOnce(new Error("Temporary upstream error"))
         .mockResolvedValueOnce({
           symbol: "NSE:RELIANCE",
           signal: "SELL",
@@ -89,12 +94,146 @@ describe("scannerService", () => {
     const result = await scannerService.scanMarket();
 
     expect(result.scannedCount).toBe(3);
+    expect(result.requestedCount).toBe(3);
     expect(result.matches).toHaveLength(2);
     expect(result.failures).toEqual([
       {
         symbol: "NSE:TCS",
-        error: "Invalid session for symbol",
+        error: "Temporary upstream error",
       },
     ]);
+    expect(result.aborted).toBe(false);
+  });
+
+  it("treats insufficient data as a non-failure and continues the scan", async () => {
+    const signalService = {
+      getSignal: jest
+        .fn()
+        .mockResolvedValueOnce({
+          symbol: "NSE:INFY",
+          signal: "NO_TRADE",
+          reason: "INSUFFICIENT_DATA",
+          ltp: 1500,
+          indicators: null,
+          meta: {
+            receivedCandles: 22,
+            requiredCandles: 50,
+          },
+        })
+        .mockResolvedValueOnce({
+          symbol: "NSE:RELIANCE",
+          signal: "SELL",
+          ltp: 2500,
+          indicators: { rsi: 35 },
+        }),
+    };
+
+    const scannerService = createScannerService({
+      signalService,
+      symbols: ["INFY", "RELIANCE"],
+    });
+
+    const result = await scannerService.scanMarket();
+
+    expect(result).toEqual({
+      scannedCount: 2,
+      requestedCount: 2,
+      matches: [
+        {
+          symbol: "NSE:RELIANCE",
+          signal: "SELL",
+          ltp: 2500,
+          indicators: { rsi: 35 },
+        },
+      ],
+      failures: [],
+      aborted: false,
+    });
+  });
+
+  it("continues even when multiple symbols return insufficient data", async () => {
+    const signalService = {
+      getSignal: jest
+        .fn()
+        .mockResolvedValueOnce({
+          symbol: "NSE:INFY",
+          signal: "NO_TRADE",
+          reason: "INSUFFICIENT_DATA",
+          ltp: 1500,
+          indicators: null,
+          meta: {
+            receivedCandles: 18,
+            requiredCandles: 50,
+          },
+        })
+        .mockResolvedValueOnce({
+          symbol: "NSE:TCS",
+          signal: "NO_TRADE",
+          reason: "INSUFFICIENT_DATA",
+          ltp: 3900,
+          indicators: null,
+          meta: {
+            receivedCandles: 24,
+            requiredCandles: 50,
+          },
+        })
+        .mockResolvedValueOnce({
+          symbol: "NSE:RELIANCE",
+          signal: "HOLD",
+          ltp: 2500,
+          indicators: { rsi: 61 },
+        }),
+    };
+
+    const scannerService = createScannerService({
+      signalService,
+      symbols: ["INFY", "TCS", "RELIANCE"],
+    });
+
+    const result = await scannerService.scanMarket();
+
+    expect(result.scannedCount).toBe(3);
+    expect(result.failures).toEqual([]);
+    expect(result.matches).toEqual([
+      {
+        symbol: "NSE:RELIANCE",
+        signal: "HOLD",
+        ltp: 2500,
+        indicators: { rsi: 61 },
+      },
+    ]);
+    expect(result.aborted).toBe(false);
+  });
+
+  it("aborts early on fatal auth or configuration failures", async () => {
+    const signalService = {
+      getSignal: jest.fn().mockRejectedValue(new Error("Failed to fetch LTP: Invalid session")),
+    };
+
+    const scannerService = createScannerService({
+      signalService,
+      symbols: ["INFY", "TCS", "RELIANCE"],
+    });
+
+    const result = await scannerService.scanMarket();
+
+    expect(signalService.getSignal).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      scannedCount: 1,
+      requestedCount: 3,
+      matches: [],
+      failures: [
+        {
+          symbol: "NSE:INFY",
+          error: "Failed to fetch LTP: Invalid session",
+        },
+      ],
+      aborted: true,
+    });
+  });
+
+  it("classifies invalid-session errors as fatal", () => {
+    expect(isFatalScanError(new Error("Failed to fetch LTP: Invalid session"))).toBe(true);
+    expect(isFatalScanError(new Error("Failed to compute indicators"))).toBe(false);
   });
 });
