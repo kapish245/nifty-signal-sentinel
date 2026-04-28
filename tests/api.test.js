@@ -114,6 +114,37 @@ describe("Zerodha session exchange", () => {
     await fs.rm(tokenPath, { force: true });
   });
 
+  it("should update the env file when requested", async () => {
+    axios.post.mockResolvedValue({
+      data: {
+        status: "success",
+        data: {
+          access_token: "access_456",
+          public_token: "public_456",
+        },
+      },
+    });
+    const envPath = path.join(
+      os.tmpdir(),
+      `kite-env-${Date.now()}-${Math.random().toString(16).slice(2)}.env`,
+    );
+
+    await exchangeRequestToken({
+      apiKey: "kite_key",
+      apiSecret: "kite_secret",
+      requestToken: "request_456",
+      envPath,
+      persistToEnv: true,
+    });
+
+    const contents = await fs.readFile(envPath, "utf8");
+
+    expect(contents).toContain("ZERODHA_REQUEST_TOKEN=request_456");
+    expect(contents).toContain("ZERODHA_ACCESS_TOKEN=access_456");
+
+    await fs.rm(envPath, { force: true });
+  });
+
   const runLiveTests = process.env.RUN_LIVE_KITE_TESTS === "true";
   const liveDescribe = runLiveTests ? describe : describe.skip;
 

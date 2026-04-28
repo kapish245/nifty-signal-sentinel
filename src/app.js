@@ -5,6 +5,7 @@ const express = require("express");
 
 const { extractRequestToken } = require("./auth/login");
 const { exchangeRequestToken } = require("./auth/token");
+const { updateEnvFile } = require("./utils/envFile");
 
 function createLogger(baseLogger = console) {
   return {
@@ -63,6 +64,24 @@ function createApp({ logger = createLogger(), onTokenReceived } = {}) {
 }
 
 async function defaultTokenHandler(requestToken, logger) {
+  const shouldUpdateEnv = process.env.ZERODHA_AUTO_UPDATE_ENV_ON_CALLBACK === "true";
+  const envPath =
+    process.env.ZERODHA_ENV_PATH ||
+    path.resolve(process.cwd(), ".env");
+
+  if (shouldUpdateEnv) {
+    await updateEnvFile({
+      envPath,
+      updates: {
+        ZERODHA_REQUEST_TOKEN: requestToken,
+      },
+    });
+    logger.info(
+      { envPath },
+      "Updated .env with Zerodha request token",
+    );
+  }
+
   if (process.env.ZERODHA_AUTO_EXCHANGE_ON_CALLBACK !== "true") {
     return;
   }
@@ -76,11 +95,13 @@ async function defaultTokenHandler(requestToken, logger) {
     apiSecret: process.env.ZERODHA_API_SECRET,
     requestToken,
     tokenPath,
+    envPath,
+    persistToEnv: shouldUpdateEnv,
     logger,
   });
 
   logger.info(
-    { tokenPath },
+    { tokenPath, envPath: shouldUpdateEnv ? envPath : null },
     "Persisted Zerodha access token after callback exchange",
   );
 }

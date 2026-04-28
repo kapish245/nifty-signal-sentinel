@@ -3,6 +3,7 @@ const path = require("path");
 const axios = require("axios");
 
 const { generateChecksum } = require("../utils/checksum");
+const { updateEnvFile } = require("../utils/envFile");
 
 const KITE_SESSION_URL = "https://api.kite.trade/session/token";
 const DEFAULT_TIMEOUT_MS = 10000;
@@ -120,6 +121,8 @@ async function exchangeRequestToken({
   timeoutMs = DEFAULT_TIMEOUT_MS,
   maxRetries = DEFAULT_MAX_RETRIES,
   tokenPath,
+  envPath,
+  persistToEnv = false,
 }) {
   const normalizedApiKey = requireNonEmptyString(apiKey, "API key");
   const normalizedApiSecret = requireNonEmptyString(apiSecret, "API secret");
@@ -190,8 +193,21 @@ async function exchangeRequestToken({
     });
   }
 
+  if (persistToEnv) {
+    await updateEnvFile({
+      envPath,
+      updates: {
+        ZERODHA_REQUEST_TOKEN: normalizedRequestToken,
+        ZERODHA_ACCESS_TOKEN: tokenResult.accessToken,
+      },
+    });
+  }
+
   logger.info(
-    { tokenPath: tokenPath || null },
+    {
+      tokenPath: tokenPath || null,
+      envPath: persistToEnv ? envPath || path.resolve(process.cwd(), ".env") : null,
+    },
     "Zerodha access token exchanged successfully",
   );
 

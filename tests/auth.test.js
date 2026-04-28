@@ -90,5 +90,21 @@ describe("Zerodha auth helpers", () => {
         }),
       ).rejects.toThrow("Missing request_token in callback");
     });
+
+    it("should allow callback handlers to persist the token automatically", async () => {
+      const logger = {
+        info: jest.fn(),
+        error: jest.fn(),
+      };
+      const onTokenReceived = jest.fn().mockResolvedValue(undefined);
+
+      await handleZerodhaCallback({
+        query: { request_token: "req_auto" },
+        logger,
+        onTokenReceived,
+      });
+
+      expect(onTokenReceived).toHaveBeenCalledWith("req_auto");
+    });
   });
 });
