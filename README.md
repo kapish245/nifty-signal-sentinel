@@ -259,36 +259,123 @@ Behavior:
 
 ## Logging
 
-Signals are stored in:
+Observability is now split into three outputs:
 
 ```text
+logs/system/YYYY-MM-DD.log
 logs/YYYY-MM-DD.json
+logs/obsidian/YYYY-MM-DD.md
 ```
 
-Each log entry contains:
+1) Structured execution logs (`logs/system/YYYY-MM-DD.log`):
 
 ```json
 {
   "timestamp": "2026-04-28T09:30:00.000Z",
-  "symbol": "NSE:INFY",
-  "signal": "HOLD",
-  "ltp": 1580,
-  "indicators": {
-    "priceTrend": "up",
-    "emaAlignment": "bullish",
-    "rsi": 61.2,
-    "volume": "increasing",
-    "oiSignal": "long_buildup"
+  "level": "info",
+  "module": "services:signal",
+  "message": "Signal decision completed",
+  "data": {
+    "symbol": "NSE:INFY",
+    "ltp": 1580,
+    "signal": "HOLD",
+    "reason": "Bullish continuation: trend up, EMA bullish, RSI healthy, volume/oi supportive",
+    "indicators": {
+      "priceTrend": "up",
+      "emaAlignment": "bullish",
+      "rsi": 61.2,
+      "volume": "increasing",
+      "oiSignal": "long_buildup"
+    }
   }
 }
 ```
 
-Important logging note:
+2) Signal archive (`logs/YYYY-MM-DD.json`):
 
-- only `HOLD` and `SELL` signals are persisted to `logs/YYYY-MM-DD.json`
-- `NO_TRADE` and `INSUFFICIENT_DATA` are not currently written to disk
-- runtime warnings and errors are primarily visible in terminal output during execution
-- there is not yet a durable application log for full scanner/test/process observability
+- Maintains per-day JSON array of persisted `HOLD` and `SELL` signal payloads.
+
+3) Obsidian markdown notes (`logs/obsidian/YYYY-MM-DD.md`):
+
+```md
+## Time: 09:30
+
+### Symbol: INFY
+
+* Signal: HOLD
+* Price: 1580
+* RSI: 61.2
+* Trend: bullish
+* Reason: strong continuation
+```
+
+### Logger controls
+
+Set these in `.env`:
+
+```env
+LOG_LEVEL=info
+ENABLE_DEBUG_LOGS=true
+ENABLE_OBSIDIAN_LOG=true
+```
+
+- `LOG_LEVEL`: minimum level emitted (`debug`, `info`, `warn`, `error`)
+- `ENABLE_DEBUG_LOGS=false`: hard-disables debug traces even if `LOG_LEVEL=debug`
+- `ENABLE_OBSIDIAN_LOG=false`: disables markdown note generation
+
+### Access token source precedence
+
+Scanner runtime resolves token in this order:
+
+1. persisted token file (`ZERODHA_TOKEN_PATH`, default `./tmp/kite-session.json`)
+2. `ZERODHA_ACCESS_TOKEN` from `.env`
+
+If both exist and differ, persisted token is preferred and a warning is logged.
+
+### What gets traced
+
+- scanner lifecycle: start, per-symbol processing, failures, summary, duration
+- scheduler lifecycle: start, skipped runs, trigger, completion duration
+- signal decisions: full decision payload with `symbol`, `ltp`, `indicators`, `signal`, `reason`
+- indicator debug traces: RSI/EMA input-output and candle counts (debug level only)
+- tests: each core test logs input/output via `logTestCase(...)`
+
+### Test execution logs
+
+Structured test logs are written to:
+
+```text
+logs/tests/day/YYYY-MM-DD.log
+```
+
+Each line is a JSON entry with test name, input, and output payload.  
+Set `TEST_LOG_CONSOLE=false` to disable console mirroring during `npm test`.
+
+### Production triage commands
+
+Tail recent structured logs:
+
+```bash
+tail -n 50 logs/system/$(date +%F).log
+```
+
+Filter scanner errors:
+
+```bash
+jq -c 'select(.module=="scanner:service" and .level=="error")' logs/system/$(date +%F).log
+```
+
+Filter one symbol across all modules:
+
+```bash
+jq -c 'select(.data.symbol=="NSE:INFY")' logs/system/$(date +%F).log
+```
+
+Show scheduler duration entries:
+
+```bash
+jq -c 'select(.module=="scheduler" and (.message|test("Completed scheduled market scan")))' logs/system/$(date +%F).log
+```
 
 ## Testing
 

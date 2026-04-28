@@ -12,6 +12,7 @@ const FATAL_ERROR_PATTERNS = [
 
 function createDefaultLogger() {
   return {
+    debug: () => undefined,
     info: () => undefined,
     warn: () => undefined,
     error: () => undefined,
@@ -29,6 +30,7 @@ function createScannerService({
   symbols = nifty50,
   logger = createDefaultLogger(),
   signalLogger,
+  obsidianLogger,
 } = {}) {
   if (!signalService || typeof signalService.getSignal !== "function") {
     throw new Error("signalService with getSignal(symbol) is required");
@@ -44,10 +46,24 @@ function createScannerService({
       const failures = [];
       let aborted = false;
       let scannedCount = 0;
+      const scanStartedAt = Date.now();
+
+      logger.info(
+        { requestedCount: symbols.length },
+        "Market scan started",
+      );
 
       for (const rawSymbol of symbols) {
         const symbol = `NSE:${String(rawSymbol).trim()}`;
         scannedCount += 1;
+        logger.debug(
+          {
+            symbol,
+            position: scannedCount,
+            requestedCount: symbols.length,
+          },
+          "Processing symbol",
+        );
 
         try {
           const result = await signalService.getSignal(symbol);
@@ -71,12 +87,26 @@ function createScannerService({
               );
             }
           }
+          if (obsidianLogger?.logSignal) {
+            try {
+              await obsidianLogger.logSignal(result);
+            } catch (error) {
+              logger.error(
+                {
+                  symbol: result.symbol,
+                  error: error.message,
+                },
+                "Failed to persist Obsidian trading signal",
+              );
+            }
+          }
 
           logger.info(
             {
               symbol: result.symbol,
               signal: result.signal,
               ltp: result.ltp,
+              reason: result.reason || null,
             },
             "Meaningful trading signal detected",
           );
@@ -102,12 +132,26 @@ function createScannerService({
         }
       }
 
+      const durationMs = Date.now() - scanStartedAt;
+      logger.info(
+        {
+          scannedCount,
+          requestedCount: symbols.length,
+          matchCount: matches.length,
+          failureCount: failures.length,
+          aborted,
+          durationMs,
+        },
+        "Market scan completed",
+      );
+
       return {
         scannedCount,
         requestedCount: symbols.length,
         matches,
         failures,
         aborted,
+        durationMs,
       };
     },
   };

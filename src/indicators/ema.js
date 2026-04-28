@@ -1,3 +1,7 @@
+const { createLogger } = require("../logger/logger");
+
+const indicatorLogger = createLogger({ moduleName: "indicators:ema" });
+
 function validateClosePrices(closePrices, minimumLength, indicatorName) {
   if (!Array.isArray(closePrices)) {
     throw new Error(`${indicatorName} requires an array of close prices`);
@@ -22,6 +26,10 @@ function calculateEMA(closePrices, period) {
   }
 
   validateClosePrices(closePrices, period, "EMA");
+  indicatorLogger.debug(
+    { period, candleCount: closePrices.length },
+    "EMA calculation started",
+  );
 
   const multiplier = 2 / (period + 1);
   let ema =
@@ -31,14 +39,31 @@ function calculateEMA(closePrices, period) {
     ema = ((closePrices[index] - ema) * multiplier) + ema;
   }
 
+  indicatorLogger.debug(
+    {
+      period,
+      candleCount: closePrices.length,
+      ema: Number(ema.toFixed(4)),
+    },
+    "EMA calculation completed",
+  );
   return ema;
 }
 
 function calculateEmaPair(closePrices) {
-  return {
+  const emaPair = {
     ema20: calculateEMA(closePrices, 20),
     ema50: calculateEMA(closePrices, 50),
   };
+  indicatorLogger.debug(
+    {
+      candleCount: closePrices.length,
+      ema20: Number(emaPair.ema20.toFixed(4)),
+      ema50: Number(emaPair.ema50.toFixed(4)),
+    },
+    "EMA pair calculation completed",
+  );
+  return emaPair;
 }
 
 module.exports = {

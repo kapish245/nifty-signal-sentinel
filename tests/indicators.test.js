@@ -1,6 +1,7 @@
 const { calculateRSI } = require("../src/indicators/rsi");
 const { calculateEMA, calculateEmaPair } = require("../src/indicators/ema");
 const { detectVolumeTrend } = require("../src/indicators/volume");
+const { logTestCase } = require("./utils/testCaseLogger");
 
 describe("indicator calculations", () => {
   it("calculates RSI(14) using Wilder smoothing", () => {
@@ -22,23 +23,27 @@ describe("indicator calculations", () => {
       46.28,
     ];
 
-    expect(calculateRSI(closePrices)).toBeCloseTo(70.46, 2);
+    const output = calculateRSI(closePrices);
+    logTestCase("indicators: RSI(14) expected value", { closePrices, period: 14 }, { output });
+    expect(output).toBeCloseTo(70.46, 2);
   });
 
   it("calculates EMA for a supplied period", () => {
-    expect(calculateEMA([1, 2, 3, 4, 5], 3)).toBeCloseTo(4, 10);
+    const output = calculateEMA([1, 2, 3, 4, 5], 3);
+    logTestCase("indicators: EMA basic sequence", { closePrices: [1, 2, 3, 4, 5], period: 3 }, { output });
+    expect(output).toBeCloseTo(4, 10);
   });
 
   it("returns EMA20 and EMA50 for close prices", () => {
     const closePrices = Array.from({ length: 60 }, (_, index) => index + 1);
 
-    expect(calculateEmaPair(closePrices)).toEqual({
+    const output = calculateEmaPair(closePrices);
+    logTestCase("indicators: EMA pair generation", { closePricesCount: closePrices.length }, output);
+    expect(output).toEqual({
       ema20: expect.any(Number),
       ema50: expect.any(Number),
     });
-    expect(calculateEmaPair(closePrices).ema20).toBeGreaterThan(
-      calculateEmaPair(closePrices).ema50,
-    );
+    expect(output.ema20).toBeGreaterThan(output.ema50);
   });
 
   it("classifies volume trend from the latest six candles", () => {
@@ -51,6 +56,8 @@ describe("indicator calculations", () => {
       { volume: 170 },
     ];
 
-    expect(detectVolumeTrend(candles)).toBe("increasing");
+    const output = detectVolumeTrend(candles);
+    logTestCase("indicators: volume trend increasing", { candles }, { output });
+    expect(output).toBe("increasing");
   });
 });

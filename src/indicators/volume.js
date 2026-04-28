@@ -1,3 +1,7 @@
+const { createLogger } = require("../logger/logger");
+
+const indicatorLogger = createLogger({ moduleName: "indicators:volume" });
+
 function detectVolumeTrend(candles) {
   if (!Array.isArray(candles) || candles.length < 6) {
     throw new Error("Volume trend requires at least 6 candles");
@@ -17,6 +21,14 @@ function detectVolumeTrend(candles) {
   const latestThree = normalizedVolumes
     .slice(-3)
     .reduce((sum, volume) => sum + volume, 0);
+  indicatorLogger.debug(
+    {
+      candleCount: candles.length,
+      previousThree,
+      latestThree,
+    },
+    "Volume trend calculation completed",
+  );
 
   if (latestThree > previousThree) {
     return "increasing";

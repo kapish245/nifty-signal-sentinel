@@ -2,6 +2,7 @@ const {
   createSignalService,
   MIN_REQUIRED_CANDLES,
 } = require("../src/services/signalService");
+const { logTestCase } = require("./utils/testCaseLogger");
 
 function buildCandles(count, startClose = 1400) {
   return Array.from({ length: count }, (_, index) => ({
@@ -33,8 +34,13 @@ describe("signalService", () => {
     });
 
     const result = await service.getSignal("NSE:INFY");
+    logTestCase(
+      "signalService: bullish signal generation",
+      { symbol: "NSE:INFY", candleCount: 50 },
+      result,
+    );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       symbol: "NSE:INFY",
       ltp: 1580,
       indicators: expect.objectContaining({
@@ -44,6 +50,7 @@ describe("signalService", () => {
         oiSignal: "long_buildup",
       }),
       signal: "HOLD",
+      reason: expect.any(String),
     });
     expect(result.indicators.rsi).toEqual(expect.any(Number));
     expect(result.indicators.rsi).toBeGreaterThan(55);
@@ -78,6 +85,11 @@ describe("signalService", () => {
     });
 
     const result = await service.getSignal("NSE:INFY");
+    logTestCase(
+      "signalService: insufficient data safe response",
+      { symbol: "NSE:INFY", candleCount: MIN_REQUIRED_CANDLES - 1 },
+      result,
+    );
 
     expect(result).toEqual({
       symbol: "NSE:INFY",
@@ -110,7 +122,13 @@ describe("signalService", () => {
       logger,
     });
 
-    await expect(service.getSignal("NSE:INFY")).resolves.toEqual({
+    const result = await service.getSignal("NSE:INFY");
+    logTestCase(
+      "signalService: indicator failure safe response",
+      { symbol: "NSE:INFY", indicatorProvider: "throws error" },
+      result,
+    );
+    expect(result).toEqual({
       symbol: "NSE:INFY",
       ltp: 1520.4,
       signal: "NO_TRADE",

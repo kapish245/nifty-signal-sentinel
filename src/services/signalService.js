@@ -26,6 +26,8 @@ function validateIndicatorPayload(indicators) {
 
 function createDefaultLogger() {
   return {
+    debug: () => undefined,
+    info: () => undefined,
     warn: () => undefined,
     error: () => undefined,
   };
@@ -164,6 +166,22 @@ function normalizeIndicatorResult(result) {
   };
 }
 
+function buildSignalReason(signal, indicators) {
+  if (!indicators) {
+    return "Indicators unavailable";
+  }
+
+  if (signal === "HOLD") {
+    return "Bullish continuation: trend up, EMA bullish, RSI healthy, volume/oi supportive";
+  }
+
+  if (signal === "SELL") {
+    return "Bearish breakdown: trend down, EMA bearish, RSI weak, volume/oi supportive";
+  }
+
+  return "No high-confidence setup detected";
+}
+
 function createSignalService({
   kiteClient,
   historicalClient,
@@ -246,12 +264,25 @@ function createSignalService({
       }
 
       indicators = validateIndicatorPayload(indicatorResult.indicators);
+      const signal = evaluateSignal(indicators);
+      const reason = buildSignalReason(signal, indicators);
+      logger.info(
+        {
+          symbol: normalizedSymbol,
+          ltp: ltpSnapshot.lastPrice,
+          indicators,
+          signal,
+          reason,
+        },
+        "Signal decision completed",
+      );
 
       return {
         symbol: normalizedSymbol,
         ltp: ltpSnapshot.lastPrice,
         indicators,
-        signal: evaluateSignal(indicators),
+        signal,
+        reason,
       };
     },
   };

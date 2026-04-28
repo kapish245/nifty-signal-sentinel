@@ -3,6 +3,7 @@ const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
 
 function createDefaultLogger() {
   return {
+    debug: () => undefined,
     info: () => undefined,
     warn: () => undefined,
     error: () => undefined,
@@ -57,11 +58,13 @@ function startScheduler({
     }
 
     if (!isMarketOpen(nowProvider())) {
-      logger.info({}, "Skipping scheduler tick outside market hours");
+      logger.info({ reason: "MARKET_CLOSED" }, "Skipping scheduler tick outside market hours");
       return;
     }
 
     isScanRunning = true;
+    const startedAt = Date.now();
+    logger.info({}, "Scheduler triggered market scan");
 
     try {
       const result = await scanMarket();
@@ -70,6 +73,7 @@ function startScheduler({
           scannedCount: result?.scannedCount ?? null,
           matchCount: result?.matches?.length ?? 0,
           failureCount: result?.failures?.length ?? 0,
+          durationMs: Date.now() - startedAt,
         },
         "Completed scheduled market scan",
       );
@@ -89,6 +93,7 @@ function startScheduler({
   executeScan().catch((error) => {
     logger.error({ error: error.message }, "Initial scheduler execution failed");
   });
+  logger.info({ intervalMs }, "Scheduler started");
 
   return {
     stop() {

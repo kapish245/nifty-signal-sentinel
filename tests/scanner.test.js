@@ -2,6 +2,7 @@ const {
   createScannerService,
   isFatalScanError,
 } = require("../src/scanner/scannerService");
+const { logTestCase } = require("./utils/testCaseLogger");
 
 describe("scannerService", () => {
   it("scans multiple stocks and returns only HOLD and SELL signals", async () => {
@@ -38,11 +39,16 @@ describe("scannerService", () => {
     });
 
     const result = await scannerService.scanMarket();
+    logTestCase(
+      "scannerService: filters meaningful signals",
+      { symbols: ["INFY", "TCS", "RELIANCE"] },
+      result,
+    );
 
     expect(signalService.getSignal).toHaveBeenNthCalledWith(1, "NSE:INFY");
     expect(signalService.getSignal).toHaveBeenNthCalledWith(2, "NSE:TCS");
     expect(signalService.getSignal).toHaveBeenNthCalledWith(3, "NSE:RELIANCE");
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       scannedCount: 3,
       requestedCount: 3,
       matches: [
@@ -62,6 +68,7 @@ describe("scannerService", () => {
       failures: [],
       aborted: false,
     });
+    expect(result.durationMs).toEqual(expect.any(Number));
     expect(signalLogger.logSignal).toHaveBeenCalledTimes(2);
     expect(signalLogger.logSignal).toHaveBeenNthCalledWith(1, result.matches[0]);
     expect(signalLogger.logSignal).toHaveBeenNthCalledWith(2, result.matches[1]);
@@ -92,6 +99,11 @@ describe("scannerService", () => {
     });
 
     const result = await scannerService.scanMarket();
+    logTestCase(
+      "scannerService: continues on non-fatal error",
+      { symbols: ["INFY", "TCS", "RELIANCE"] },
+      result,
+    );
 
     expect(result.scannedCount).toBe(3);
     expect(result.requestedCount).toBe(3);
@@ -134,8 +146,13 @@ describe("scannerService", () => {
     });
 
     const result = await scannerService.scanMarket();
+    logTestCase(
+      "scannerService: ignores insufficient data",
+      { symbols: ["INFY", "RELIANCE"] },
+      result,
+    );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       scannedCount: 2,
       requestedCount: 2,
       matches: [
@@ -191,6 +208,11 @@ describe("scannerService", () => {
     });
 
     const result = await scannerService.scanMarket();
+    logTestCase(
+      "scannerService: multiple insufficient data responses",
+      { symbols: ["INFY", "TCS", "RELIANCE"] },
+      result,
+    );
 
     expect(result.scannedCount).toBe(3);
     expect(result.failures).toEqual([]);
@@ -216,9 +238,14 @@ describe("scannerService", () => {
     });
 
     const result = await scannerService.scanMarket();
+    logTestCase(
+      "scannerService: aborts on fatal failure",
+      { symbols: ["INFY", "TCS", "RELIANCE"] },
+      result,
+    );
 
     expect(signalService.getSignal).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       scannedCount: 1,
       requestedCount: 3,
       matches: [],

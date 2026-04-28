@@ -2,17 +2,22 @@ require("dotenv").config();
 
 const path = require("path");
 const express = require("express");
+const { createLogger: createStructuredLogger } = require("./logger/logger");
 
 const { extractRequestToken } = require("./auth/login");
 const { exchangeRequestToken } = require("./auth/token");
 const { updateEnvFile } = require("./utils/envFile");
 
-function createLogger(baseLogger = console) {
-  return {
-    info: (payload, message) => baseLogger.log(message, payload),
-    warn: (payload, message) => baseLogger.warn(message, payload),
-    error: (payload, message) => baseLogger.error(message, payload),
-  };
+function maskToken(token) {
+  if (typeof token !== "string" || token.length < 8) {
+    return "***";
+  }
+
+  return `${token.slice(0, 3)}***${token.slice(-3)}`;
+}
+
+function createLogger() {
+  return createStructuredLogger({ moduleName: "auth:callback" });
 }
 
 async function handleZerodhaCallback({
@@ -25,7 +30,7 @@ async function handleZerodhaCallback({
   const requestToken = extractRequestToken(query);
 
   logger.info(
-    { requestToken },
+    { requestTokenMasked: maskToken(requestToken) },
     "Received Zerodha request token",
   );
 
@@ -65,9 +70,18 @@ function createApp({ logger = createLogger(), onTokenReceived } = {}) {
 
 async function defaultTokenHandler(requestToken, logger) {
   const shouldUpdateEnv = process.env.ZERODHA_AUTO_UPDATE_ENV_ON_CALLBACK === "true";
+  const shouldExchangeToken = process.env.ZERODHA_AUTO_EXCHANGE_ON_CALLBACK === "true";
   const envPath =
     process.env.ZERODHA_ENV_PATH ||
     path.resolve(process.cwd(), ".env");
+  logger.info(
+    {
+      shouldUpdateEnv,
+      shouldExchangeToken,
+      envPath,
+    },
+    "Processing callback token automation settings",
+  );
 
   if (shouldUpdateEnv) {
     await updateEnvFile({
@@ -82,7 +96,7 @@ async function defaultTokenHandler(requestToken, logger) {
     );
   }
 
-  if (process.env.ZERODHA_AUTO_EXCHANGE_ON_CALLBACK !== "true") {
+  if (!shouldExchangeToken) {
     return;
   }
 

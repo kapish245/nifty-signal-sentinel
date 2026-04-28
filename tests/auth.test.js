@@ -72,7 +72,7 @@ describe("Zerodha auth helpers", () => {
       });
       expect(onTokenReceived).toHaveBeenCalledWith("req_789");
       expect(logger.info).toHaveBeenCalledWith(
-        { requestToken: "req_789" },
+        { requestTokenMasked: "***" },
         "Received Zerodha request token",
       );
     });

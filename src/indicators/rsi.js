@@ -1,3 +1,7 @@
+const { createLogger } = require("../logger/logger");
+
+const indicatorLogger = createLogger({ moduleName: "indicators:rsi" });
+
 function validateClosePrices(closePrices, minimumLength, indicatorName) {
   if (!Array.isArray(closePrices)) {
     throw new Error(`${indicatorName} requires an array of close prices`);
@@ -22,6 +26,10 @@ function calculateRSI(closePrices, period = 14) {
   }
 
   validateClosePrices(closePrices, period + 1, "RSI");
+  indicatorLogger.debug(
+    { period, candleCount: closePrices.length },
+    "RSI calculation started",
+  );
 
   let gains = 0;
   let losses = 0;
@@ -53,8 +61,18 @@ function calculateRSI(closePrices, period = 14) {
   }
 
   const relativeStrength = averageGain / averageLoss;
-
-  return 100 - (100 / (1 + relativeStrength));
+  const rsi = 100 - (100 / (1 + relativeStrength));
+  indicatorLogger.debug(
+    {
+      period,
+      candleCount: closePrices.length,
+      averageGain: Number(averageGain.toFixed(6)),
+      averageLoss: Number(averageLoss.toFixed(6)),
+      rsi: Number(rsi.toFixed(4)),
+    },
+    "RSI calculation completed",
+  );
+  return rsi;
 }
 
 module.exports = {
