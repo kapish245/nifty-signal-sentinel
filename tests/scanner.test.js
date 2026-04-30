@@ -33,10 +33,14 @@ describe("scannerService", () => {
     const signalLogger = {
       logSignal: jest.fn().mockResolvedValue(undefined),
     };
+    const discordNotifier = {
+      logSignal: jest.fn().mockResolvedValue(undefined),
+    };
 
     const scannerService = createScannerService({
       signalService,
       signalLogger,
+      discordNotifier,
       symbols: ["INFY", "TCS", "RELIANCE"],
     });
 
@@ -76,6 +80,49 @@ describe("scannerService", () => {
     expect(signalLogger.logSignal).toHaveBeenCalledTimes(2);
     expect(signalLogger.logSignal).toHaveBeenNthCalledWith(1, result.matches[0]);
     expect(signalLogger.logSignal).toHaveBeenNthCalledWith(2, result.matches[1]);
+    expect(discordNotifier.logSignal).toHaveBeenCalledTimes(2);
+    expect(discordNotifier.logSignal).toHaveBeenNthCalledWith(1, result.matches[0]);
+    expect(discordNotifier.logSignal).toHaveBeenNthCalledWith(2, result.matches[1]);
+  });
+
+  it("continues scanning when Discord notification fails", async () => {
+    const signalService = {
+      getSignal: jest.fn().mockResolvedValue({
+        symbol: "NSE:INFY",
+        signal: "INTRADAY_LONG",
+        signal_type: "INTRADAY_LONG",
+        ltp: 1500,
+        indicators: { rsi: 61 },
+      }),
+    };
+    const logger = {
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+    };
+    const discordNotifier = {
+      logSignal: jest.fn().mockRejectedValue(new Error("Discord unavailable")),
+    };
+    const scannerService = createScannerService({
+      signalService,
+      discordNotifier,
+      logger,
+      symbols: ["INFY"],
+    });
+
+    const result = await scannerService.scanMarket();
+
+    expect(result.matches).toHaveLength(1);
+    expect(result.failures).toEqual([]);
+    expect(result.aborted).toBe(false);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        symbol: "NSE:INFY",
+        error: "Discord unavailable",
+      }),
+      "Failed to send Discord trading signal",
+    );
   });
 
   it("continues scanning when one stock fails", async () => {

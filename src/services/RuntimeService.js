@@ -1,5 +1,6 @@
 const path = require("path");
 
+const DiscordWebhookAdapter = require("../adapters/discord/DiscordWebhookAdapter");
 const KiteAuthAdapter = require("../adapters/zerodha/KiteAuthAdapter");
 const KiteDerivativesAdapter = require("../adapters/zerodha/KiteDerivativesAdapter");
 const KiteHistoricalAdapter = require("../adapters/zerodha/KiteHistoricalAdapter");
@@ -124,8 +125,17 @@ class RuntimeService {
       signalService,
       signalLogger: createSignalLogger(),
       obsidianLogger: createObsidianLogger({ isEnabled: this.#env.ENABLE_OBSIDIAN_LOG !== "false" }),
+      discordNotifier: this.#createDiscordNotifier({ logger }),
       logger: logger.child("services:scanner"),
       runContext,
+    });
+  }
+
+  #createDiscordNotifier({ logger }) {
+    return new DiscordWebhookAdapter({
+      webhookUrl: this.#env.DISCORD_WEBHOOK_URL,
+      isEnabled: this.#env.ENABLE_DISCORD_ALERTS === "true",
+      logger: logger.child("adapters:discord:webhook"),
     });
   }
 }

@@ -1,6 +1,6 @@
 # Nifty Signal Sentinel
 
-Nifty Signal Sentinel is a production-oriented Node.js intraday trading scanner built on Zerodha Kite Connect. It currently covers authentication, automatic local token capture for development, token persistence, LTP and historical candle access, market-mode-aware candle policy, multi-timeframe technical analysis, derivatives/OI confirmation, Nifty 50 market scanning, scheduler-based execution, rate-limit-safe API access, correlation IDs, file-based data boundaries, and structured signal logging.
+Nifty Signal Sentinel is a production-oriented Node.js intraday trading scanner built on Zerodha Kite Connect. It currently covers authentication, automatic local token capture for development, token persistence, LTP and historical candle access, market-mode-aware candle policy, multi-timeframe technical analysis, derivatives/OI confirmation, Nifty 50 market scanning, scheduler-based execution, Discord webhook alerts, rate-limit-safe API access, correlation IDs, file-based data boundaries, and structured signal logging.
 
 The scanner is designed to fail safe when Zerodha historical data is incomplete. If the API returns too few candles for indicator computation, the system returns a safe `NO_TRADE` result instead of crashing.
 
@@ -37,6 +37,7 @@ The application is designed as a stable backend foundation for a rules-based tra
 - Defensive insufficient-data handling for variable historical candle responses
 - Nifty 50 scanning with meaningful-signal filtering
 - Scheduler-based execution during market hours
+- Discord webhook notifications for actionable signals
 - Rate limiting to stay within Zerodha API limits
 - Structured JSON logging for actionable signals
 
@@ -52,6 +53,7 @@ Development completed so far:
 - Signal service is wired to real indicators
 - Phase 4 technical engine is implemented for `minute`, `5minute`, and `15minute` analysis
 - Phase 5 derivatives/OI layer is implemented with Zerodha-backed option-chain normalization
+- Phase 6 Discord webhook notifications are implemented with deterministic templates
 - Signal generation now degrades safely to `NO_TRADE` when candle history is insufficient
 - Market-mode and candle-requirement services are implemented
 - File-based repositories exist for candles, market context, and watchlists
@@ -73,6 +75,7 @@ Development completed so far:
 - Option-chain normalization for NFO contracts when derivatives data is available
 - Deterministic OI evidence: PCR, max pain, call/put walls, OI support, and OI resistance
 - Confidence adjustment when derivatives confirm or conflict with the technical signal
+- Discord webhook alerts for actionable intraday contracts when enabled
 - Queue-based API throttling to avoid burst requests
 - Market-hours-only scheduler using `setInterval`
 - JSON log files written per trading day
@@ -111,7 +114,7 @@ Core flow:
 9. If available, derivatives data is normalized and analyzed for OI confirmation
 10. If historical candles are insufficient, a safe `NO_TRADE` response is returned
 11. Otherwise indicators are computed and mapped through technical engines into an intraday signal contract
-12. Actionable signals are printed and logged with entry, stop loss, targets, confidence, and invalidation
+12. Actionable signals are printed, logged, and optionally sent to Discord
 13. Scheduler repeats the process during market hours
 
 ## Project Structure
@@ -126,6 +129,8 @@ Core flow:
 │   ├── app.js
 │   ├── runner.js
 │   ├── adapters
+│   │   ├── discord
+│   │   │   └── DiscordWebhookAdapter.js
 │   │   └── zerodha
 │   │       ├── KiteAuthAdapter.js
 │   │       ├── KiteDerivativesAdapter.js
@@ -175,6 +180,8 @@ Core flow:
 │   ├── market
 │   │   ├── CandleRequirementService.js
 │   │   └── MarketClock.js
+│   ├── notifications
+│   │   └── DiscordSignalFormatter.js
 │   ├── repositories
 │   │   ├── CandleRepository.js
 │   │   ├── JsonFileRepository.js
@@ -202,6 +209,7 @@ Core flow:
     ├── api.test.js
     ├── auth.test.js
     ├── derivativesOiEngine.test.js
+    ├── discordNotification.test.js
     ├── envFile.test.js
     ├── indicators.test.js
     ├── kiteDerivatives.test.js
@@ -239,6 +247,8 @@ RUN_LIVE_KITE_TESTS=false
 ZERODHA_REQUEST_TOKEN=
 ZERODHA_ACCESS_TOKEN=
 SCANNER_INTERVAL_MS=120000
+ENABLE_DISCORD_ALERTS=false
+DISCORD_WEBHOOK_URL=
 ```
 
 Notes:
@@ -247,6 +257,8 @@ Notes:
 - `ZERODHA_AUTO_UPDATE_ENV_ON_CALLBACK` enables automatic local `.env` updates after callback handling
 - `ZERODHA_ENV_PATH` lets you override which env file is updated during local development
 - `SCANNER_INTERVAL_MS` defaults to `120000` milliseconds if omitted
+- `ENABLE_DISCORD_ALERTS=true` enables Discord webhook notifications for actionable signals
+- `DISCORD_WEBHOOK_URL` is required only when Discord alerts are enabled
 
 ## Getting Started
 
@@ -256,27 +268,26 @@ Notes:
 npm install
 ```
 
-2. Run the test suite:
+1. Run the test suite:
 
 ```bash
 npm test
 ```
 
-3. Start the callback server:
+1. Start the callback server:
 
 ```bash
 npm start
 ```
 
-4. Generate the Zerodha login URL:
+1. Generate the Zerodha login URL:
 
 ```bash
 npm run auth:url
 ```
 
-5. Log in with Zerodha and capture the `request_token`
-
-6. Exchange the request token for an access token:
+1. Log in with Zerodha and capture the `request_token`
+2. Exchange the request token for an access token:
 
 ```bash
 node -e "require('dotenv').config(); const { exchangeRequestToken } = require('./src/auth/token'); exchangeRequestToken({ apiKey: process.env.ZERODHA_API_KEY, apiSecret: process.env.ZERODHA_API_SECRET, requestToken: process.env.ZERODHA_REQUEST_TOKEN, tokenPath: process.env.ZERODHA_TOKEN_PATH }).then((result) => console.log({ accessToken: result.accessToken, publicToken: result.publicToken })).catch((error) => { console.error(error.message); process.exit(1); });"
@@ -292,13 +303,13 @@ To automate local token handling during development:
 npm run auth:auto
 ```
 
-2. In another terminal, print the login URL:
+1. In another terminal, print the login URL:
 
 ```bash
 npm run auth:url
 ```
 
-3. Open the URL in your browser and complete the Zerodha login flow
+1. Open the URL in your browser and complete the Zerodha login flow
 
 After the callback returns to `http://localhost:3000`, the app will:
 
@@ -338,13 +349,14 @@ Behavior:
 - returns `NO_TRADE` with reason `INSUFFICIENT_DATA` when fewer than 50 candles are available
 - returns `NO_TRADE` with reason `MARKET_MODE_BLOCKED` when runtime signal generation is enforced outside live market modes
 - logs only actionable intraday signals
+- sends Discord webhook notifications for actionable signals when enabled
 - skips `NO_TRADE`
 - scans only during `09:15` to `15:30` IST on weekdays
 - continues scanning even if one symbol fails
 
 ## Intraday Signal Contract
 
-The current Phase 5 contract combines deterministic indicators, price-action evidence, multi-timeframe alignment, and derivatives/OI confirmation into actionable intraday fields. It still does not include portfolio awareness, backtesting, Discord delivery, or AI critique.
+The current Phase 6 contract combines deterministic indicators, price-action evidence, multi-timeframe alignment, derivatives/OI confirmation, and optional Discord delivery. It still does not include portfolio awareness, backtesting, order placement, or AI critique.
 
 Actionable signal types:
 
@@ -463,7 +475,7 @@ logs/YYYY-MM-DD.json
 logs/obsidian/YYYY-MM-DD.md
 ```
 
-1) Structured execution logs (`logs/system/YYYY-MM-DD.log`):
+1. Structured execution logs (`logs/system/YYYY-MM-DD.log`):
 
 ```json
 {
@@ -492,11 +504,11 @@ logs/obsidian/YYYY-MM-DD.md
 }
 ```
 
-2) Signal archive (`logs/YYYY-MM-DD.json`):
+1. Signal archive (`logs/YYYY-MM-DD.json`):
 
 - Maintains per-day JSON array of persisted actionable intraday signal payloads.
 
-3) Obsidian markdown notes (`logs/obsidian/YYYY-MM-DD.md`):
+1. Obsidian markdown notes (`logs/obsidian/YYYY-MM-DD.md`):
 
 ```md
 ## 09:30 - NSE:INFY - INTRADAY_LONG
@@ -534,6 +546,23 @@ ENABLE_OBSIDIAN_LOG=true
 - `LOG_LEVEL`: minimum level emitted (`debug`, `info`, `warn`, `error`)
 - `ENABLE_DEBUG_LOGS=false`: hard-disables debug traces even if `LOG_LEVEL=debug`
 - `ENABLE_OBSIDIAN_LOG=false`: disables markdown note generation
+
+### Discord alerts
+
+Phase 6 supports one-way Discord webhook notifications for actionable intraday signals.
+
+```env
+ENABLE_DISCORD_ALERTS=true
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
+
+Discord behavior:
+
+- sends only actionable `INTRADAY_LONG` and `INTRADAY_SHORT` contracts
+- uses deterministic message text; AI is not used for notification wording
+- includes entry, stop loss, targets, confidence, invalidation, technical evidence, derivatives evidence, and IDs
+- does not stop the scanner if Discord delivery fails
+- skips sending when `ENABLE_DISCORD_ALERTS=false`
 
 ### Access token source precedence
 
@@ -617,6 +646,7 @@ The suite currently covers:
 - indicator calculations
 - Phase 4 VWAP, ATR, MACD, support/resistance, breakout, multi-timeframe analysis, and ATR-based risk
 - Phase 5 derivatives normalization, OI metrics, confirmation/conflict, and safe fallback
+- Phase 6 Discord webhook formatting, delivery, and scanner failure isolation
 - signal engine logic
 - signal service integration
 - scanner filtering behavior
@@ -653,8 +683,9 @@ Live signal behavior:
 
 - Phase 4: intraday technical signal engine with multi-timeframe analysis, VWAP, ATR, MACD, RSI, EMA, volume, price action, entry, stop, targets, and confidence. First implementation slice completed.
 - Phase 5: derivatives/OI layer with option chain, OI buildup, PCR, max pain, and OI support/resistance. First implementation slice completed.
-- Phase 6: Discord notifications using deterministic templates, not AI.
+- Phase 6: Discord webhook notifications using deterministic templates, not AI. First implementation slice completed.
 - Phase 7: portfolio and position awareness using JSON first, then optional Zerodha holdings/positions.
 - Phase 8: backtesting and 10-15 non-overfitted scenario tests.
 - Phase 9: post-market review and learning journal.
 - Phase 10: macro, news, company-event, fundamentals, and AI critique layer.
+

@@ -38,6 +38,8 @@ class ScannerService {
 
   #obsidian_logger;
 
+  #discord_notifier;
+
   #run_context;
 
   constructor({
@@ -46,6 +48,7 @@ class ScannerService {
     logger = createDefaultLogger(),
     signalLogger,
     obsidianLogger,
+    discordNotifier,
     runContext = new RunContext(),
   } = {}) {
     if (!signalService || typeof signalService.getSignal !== "function") {
@@ -60,6 +63,7 @@ class ScannerService {
     this.#logger = logger;
     this.#signal_logger = signalLogger;
     this.#obsidian_logger = obsidianLogger;
+    this.#discord_notifier = discordNotifier;
     this.#run_context = runContext;
   }
 
@@ -121,7 +125,7 @@ class ScannerService {
   }
 
   async #handleSignalResult({ signal_result, symbol_context, result }) {
-    if (!LOGGABLE_SIGNALS.has(signal_result.signal)) return;
+    if (!LOGGABLE_SIGNALS.has(signal_result.signal_type || signal_result.signal)) return;
 
     result.matches.push(signal_result);
     await this.#persistSignal(signal_result, symbol_context);
@@ -140,6 +144,12 @@ class ScannerService {
       signal_result,
       symbol_context,
       failure_message: "Failed to persist Obsidian trading signal",
+    });
+    await this.#persistWithLogger({
+      logger: this.#discord_notifier,
+      signal_result,
+      symbol_context,
+      failure_message: "Failed to send Discord trading signal",
     });
   }
 

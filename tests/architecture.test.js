@@ -1,3 +1,4 @@
+const DiscordWebhookAdapter = require("../src/adapters/discord/DiscordWebhookAdapter");
 const KiteAuthAdapter = require("../src/adapters/zerodha/KiteAuthAdapter");
 const KiteDerivativesAdapter = require("../src/adapters/zerodha/KiteDerivativesAdapter");
 const KiteHistoricalAdapter = require("../src/adapters/zerodha/KiteHistoricalAdapter");
@@ -12,6 +13,13 @@ const { ConfidenceScorer } = require("../src/engines/technical/ConfidenceScorer"
 const { DerivativesOiEngine } = require("../src/engines/derivatives/DerivativesOiEngine");
 
 describe("hexagonal architecture boundaries", () => {
+  it("exposes Discord adapter for alert delivery", () => {
+    expect(new DiscordWebhookAdapter({
+      httpClient: { post: jest.fn() },
+      isEnabled: false,
+    })).toEqual(expect.any(DiscordWebhookAdapter));
+  });
+
   it("exposes Zerodha adapters for external Kite dependencies", () => {
     expect(new KiteAuthAdapter()).toEqual(expect.any(KiteAuthAdapter));
     expect(new KiteQuoteAdapter({
