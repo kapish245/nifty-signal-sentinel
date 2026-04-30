@@ -28,9 +28,7 @@ function isBullishContinuation(input) {
     input.rsi > 55 &&
     input.volume === "increasing" &&
     input.multiTimeframeBias !== "bearish" &&
-    (input.oiSignal === "long_buildup" ||
-      input.oiSignal === "short_covering" ||
-      input.breakout?.type === "bullish_breakout")
+    hasBullishTrigger(input)
   );
 }
 
@@ -41,9 +39,23 @@ function isBearishBreakdown(input) {
     input.rsi < 40 &&
     input.volume === "increasing" &&
     input.multiTimeframeBias !== "bullish" &&
-    (input.oiSignal === "short_buildup" ||
-      input.breakout?.type === "bearish_breakdown")
+    hasBearishTrigger(input)
   );
+}
+
+function hasBullishTrigger(input) {
+  return input.oiSignal === "long_buildup" ||
+    input.oiSignal === "short_covering" ||
+    input.breakout?.type === "bullish_breakout" ||
+    input.macd?.bias === "bullish" ||
+    input.vwap < input.ltp;
+}
+
+function hasBearishTrigger(input) {
+  return input.oiSignal === "short_buildup" ||
+    input.breakout?.type === "bearish_breakdown" ||
+    input.macd?.bias === "bearish" ||
+    input.vwap > input.ltp;
 }
 
 class IntradaySignalEngine {
@@ -70,6 +82,8 @@ module.exports = {
   SIGNALS,
   IntradaySignalEngine,
   evaluateSignal,
+  hasBullishTrigger,
+  hasBearishTrigger,
   isBullishContinuation,
   isBearishBreakdown,
   validateSignalInput,

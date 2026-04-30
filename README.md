@@ -1,6 +1,6 @@
 # Nifty Signal Sentinel
 
-Nifty Signal Sentinel is a production-oriented Node.js intraday trading scanner built on Zerodha Kite Connect. It currently covers authentication, automatic local token capture for development, token persistence, LTP and historical candle access, market-mode-aware candle policy, multi-timeframe technical analysis, Nifty 50 market scanning, scheduler-based execution, rate-limit-safe API access, correlation IDs, file-based data boundaries, and structured signal logging.
+Nifty Signal Sentinel is a production-oriented Node.js intraday trading scanner built on Zerodha Kite Connect. It currently covers authentication, automatic local token capture for development, token persistence, LTP and historical candle access, market-mode-aware candle policy, multi-timeframe technical analysis, derivatives/OI confirmation, Nifty 50 market scanning, scheduler-based execution, rate-limit-safe API access, correlation IDs, file-based data boundaries, and structured signal logging.
 
 The scanner is designed to fail safe when Zerodha historical data is incomplete. If the API returns too few candles for indicator computation, the system returns a safe `NO_TRADE` result instead of crashing.
 
@@ -32,6 +32,7 @@ The application is designed as a stable backend foundation for a rules-based tra
 - Historical candle fetches
 - Indicator engine for RSI, EMA, volume, trend, VWAP, ATR, and MACD
 - Price-action context for support/resistance, breakout/breakdown, and multi-timeframe bias
+- Derivatives/OI context for PCR, max pain, OI support/resistance, and signal confirmation
 - Signal engine output mapped to intraday contracts: `INTRADAY_LONG`, `INTRADAY_SHORT`, and `NO_TRADE`
 - Defensive insufficient-data handling for variable historical candle responses
 - Nifty 50 scanning with meaningful-signal filtering
@@ -50,6 +51,7 @@ Development completed so far:
 - Indicator engine is implemented with real market-data inputs
 - Signal service is wired to real indicators
 - Phase 4 technical engine is implemented for `minute`, `5minute`, and `15minute` analysis
+- Phase 5 derivatives/OI layer is implemented with Zerodha-backed option-chain normalization
 - Signal generation now degrades safely to `NO_TRADE` when candle history is insufficient
 - Market-mode and candle-requirement services are implemented
 - File-based repositories exist for candles, market context, and watchlists
@@ -68,6 +70,9 @@ Development completed so far:
 - Explicit candle policy for `1minute`, `5minute`, `15minute`, and `day`
 - Multi-timeframe analysis using `minute`, `5minute`, and `15minute`
 - VWAP, ATR, MACD, support/resistance, and breakout evidence in signal payloads
+- Option-chain normalization for NFO contracts when derivatives data is available
+- Deterministic OI evidence: PCR, max pain, call/put walls, OI support, and OI resistance
+- Confidence adjustment when derivatives confirm or conflict with the technical signal
 - Queue-based API throttling to avoid burst requests
 - Market-hours-only scheduler using `setInterval`
 - JSON log files written per trading day
@@ -103,10 +108,11 @@ Core flow:
 6. `ScannerService` scans the configured Nifty 50 universe
 7. `ScannerService` creates a `scan_id` and one `symbol_analysis_id` per stock
 8. `SignalAnalysisService` fetches LTP and multi-timeframe historical candles for each symbol
-9. If historical candles are insufficient, a safe `NO_TRADE` response is returned
-10. Otherwise indicators are computed and mapped through technical engines into an intraday signal contract
-11. Actionable signals are printed and logged with entry, stop loss, targets, confidence, and invalidation
-12. Scheduler repeats the process during market hours
+9. If available, derivatives data is normalized and analyzed for OI confirmation
+10. If historical candles are insufficient, a safe `NO_TRADE` response is returned
+11. Otherwise indicators are computed and mapped through technical engines into an intraday signal contract
+12. Actionable signals are printed and logged with entry, stop loss, targets, confidence, and invalidation
+13. Scheduler repeats the process during market hours
 
 ## Project Structure
 
@@ -122,6 +128,7 @@ Core flow:
 │   ├── adapters
 │   │   └── zerodha
 │   │       ├── KiteAuthAdapter.js
+│   │       ├── KiteDerivativesAdapter.js
 │   │       ├── KiteHistoricalAdapter.js
 │   │       └── KiteQuoteAdapter.js
 │   ├── auth
@@ -134,8 +141,13 @@ Core flow:
 │   │   └── ScannerController.js
 │   ├── data
 │   │   ├── kiteClient.js
+│   │   ├── kiteDerivatives.js
 │   │   └── kiteHistorical.js
 │   ├── engines
+│   │   ├── derivatives
+│   │   │   ├── DerivativesConfirmationEngine.js
+│   │   │   ├── DerivativesOiEngine.js
+│   │   │   └── OptionChainNormalizer.js
 │   │   └── technical
 │   │       ├── ConfidenceScorer.js
 │   │       ├── IntradaySignalEngine.js
@@ -189,8 +201,10 @@ Core flow:
 └── tests
     ├── api.test.js
     ├── auth.test.js
+    ├── derivativesOiEngine.test.js
     ├── envFile.test.js
     ├── indicators.test.js
+    ├── kiteDerivatives.test.js
     ├── liveMarketData.test.js
     ├── phase4TechnicalEngine.test.js
     ├── rateLimiter.test.js
@@ -318,6 +332,7 @@ Behavior:
 - scans the full configured Nifty 50 universe
 - fetches LTP and `minute`, `5minute`, and `15minute` candles through rate-limited clients
 - computes real indicators and price-action evidence
+- fetches and analyzes Zerodha NFO derivatives snapshots when configured
 - identifies market mode before signal generation
 - prefers target-count candle fetching for multi-timeframe candles when the historical client supports it
 - returns `NO_TRADE` with reason `INSUFFICIENT_DATA` when fewer than 50 candles are available
@@ -329,7 +344,7 @@ Behavior:
 
 ## Intraday Signal Contract
 
-The current Phase 4 contract combines deterministic indicators, price-action evidence, and multi-timeframe alignment into actionable intraday fields. It still does not include derivatives/OI confirmation, portfolio awareness, backtesting, or AI critique.
+The current Phase 5 contract combines deterministic indicators, price-action evidence, multi-timeframe alignment, and derivatives/OI confirmation into actionable intraday fields. It still does not include portfolio awareness, backtesting, Discord delivery, or AI critique.
 
 Actionable signal types:
 
@@ -367,6 +382,16 @@ Phase 4 evidence includes:
 - `resistance`
 - `breakout`
 - `multi_timeframe_bias`
+
+Phase 5 derivatives evidence includes:
+
+- `derivatives_status`
+- `derivatives_bias`
+- `oi_confirmation`
+- `pcr`
+- `max_pain`
+- `oi_support`
+- `oi_resistance`
 
 ## Candle Policy
 
@@ -526,6 +551,7 @@ If both exist and differ, persisted token is preferred and a warning is logged.
 - signal decisions: full decision payload with `run_id`, `scan_id`, `symbol_analysis_id`, `signal_id`, trade plan, evidence, and reason
 - candle fetches: interval, target candles, required candles, received candles, max lookback, and market mode
 - indicator evidence: RSI, EMA trend, VWAP, ATR, MACD, support/resistance, breakout, and multi-timeframe bias
+- derivatives evidence: status, bias, PCR, max pain, OI support/resistance, and confirmation/conflict
 - tests: each core test logs input/output via `logTestCase(...)`
 
 ### Test execution logs
@@ -590,6 +616,7 @@ The suite currently covers:
 - file-based repositories
 - indicator calculations
 - Phase 4 VWAP, ATR, MACD, support/resistance, breakout, multi-timeframe analysis, and ATR-based risk
+- Phase 5 derivatives normalization, OI metrics, confirmation/conflict, and safe fallback
 - signal engine logic
 - signal service integration
 - scanner filtering behavior
@@ -616,16 +643,16 @@ Live signal behavior:
 - Quote calls should stay around `1 request/sec`
 - Historical calls should stay around `2-3 requests/sec`
 - Zerodha historical API uses date ranges and does not guarantee a fixed candle count
-- Current intraday strategy logic is deterministic and improving, but still needs Phase 5 OI and Phase 8 backtesting before trust
+- Current intraday strategy logic is deterministic and improving, but still needs Phase 8 backtesting before trust
 - The application currently uses REST polling only
 - WebSockets are not implemented yet
-- OI-specific strategy logic is not implemented yet
+- OI-specific strategy logic is implemented as a deterministic confirmation layer, not a standalone signal source
 - Market holidays are not explicitly checked yet; only weekday and market-hour windows are enforced
 
 ## Roadmap
 
 - Phase 4: intraday technical signal engine with multi-timeframe analysis, VWAP, ATR, MACD, RSI, EMA, volume, price action, entry, stop, targets, and confidence. First implementation slice completed.
-- Phase 5: derivatives/OI layer with option chain, OI buildup/unwinding, PCR, max pain, and futures confirmation where available.
+- Phase 5: derivatives/OI layer with option chain, OI buildup, PCR, max pain, and OI support/resistance. First implementation slice completed.
 - Phase 6: Discord notifications using deterministic templates, not AI.
 - Phase 7: portfolio and position awareness using JSON first, then optional Zerodha holdings/positions.
 - Phase 8: backtesting and 10-15 non-overfitted scenario tests.

@@ -59,7 +59,11 @@ describe("signalService", () => {
         priceTrend: "up",
         emaAlignment: "bullish",
         volume: "increasing",
-        oiSignal: "long_buildup",
+        oiSignal: "neutral",
+        derivatives: expect.objectContaining({
+          status: "unavailable",
+          oiConfirmation: "unavailable",
+        }),
       }),
       reason: expect.any(String),
     });
@@ -77,6 +81,53 @@ describe("signalService", () => {
         marketContext: expect.objectContaining({
           mode: expect.any(String),
         }),
+      }),
+    );
+  });
+
+  it("merges derivatives confirmation into signal payload and confidence", async () => {
+    const service = createSignalService({
+      kiteClient: {
+        getLTP: jest.fn().mockResolvedValue({
+          symbol: "NSE:INFY",
+          instrumentToken: 408065,
+          lastPrice: 1580,
+        }),
+      },
+      historicalClient: {
+        getHistoricalCandlesByCount: jest.fn().mockResolvedValue(buildCandles(120)),
+      },
+      derivativesProvider: {
+        getOptionChain: jest.fn().mockResolvedValue({
+          underlying: "INFY",
+          spotPrice: 1580,
+          expiry: "2026-05-28",
+          contracts: [
+            { strike: 1560, optionType: "PE", oi: 2200, volume: 150, lastPrice: 18 },
+            { strike: 1580, optionType: "PE", oi: 1800, volume: 120, lastPrice: 28 },
+            { strike: 1600, optionType: "CE", oi: 900, volume: 100, lastPrice: 22 },
+            { strike: 1620, optionType: "CE", oi: 800, volume: 90, lastPrice: 16 },
+          ],
+        }),
+      },
+    });
+
+    const result = await service.getSignal("NSE:INFY");
+
+    expect(result.signal_type).toBe("INTRADAY_LONG");
+    expect(result.indicators.derivatives).toMatchObject({
+      status: "available",
+      derivativesBias: "bullish",
+      oiConfirmation: "confirms",
+      pcr: expect.any(Number),
+      oiSupport: 1560,
+      oiResistance: 1600,
+    });
+    expect(result.evidence).toEqual(
+      expect.objectContaining({
+        derivatives_status: "available",
+        derivatives_bias: "bullish",
+        oi_confirmation: "confirms",
       }),
     );
   });

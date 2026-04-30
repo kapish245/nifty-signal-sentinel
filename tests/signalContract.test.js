@@ -53,7 +53,7 @@ describe("SignalContractBuilder", () => {
       valid_until: "2026-04-30T05:20:00.000Z",
       invalidation_reason: "Do not enter if price falls below 1497. If already entered, exit near stop loss 1488.",
       evidence: expect.objectContaining({
-        source: "phase_4_technical_engine",
+        source: "phase_5_derivatives_oi_layer",
       }),
     });
   });

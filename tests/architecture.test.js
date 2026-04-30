@@ -1,4 +1,5 @@
 const KiteAuthAdapter = require("../src/adapters/zerodha/KiteAuthAdapter");
+const KiteDerivativesAdapter = require("../src/adapters/zerodha/KiteDerivativesAdapter");
 const KiteHistoricalAdapter = require("../src/adapters/zerodha/KiteHistoricalAdapter");
 const KiteQuoteAdapter = require("../src/adapters/zerodha/KiteQuoteAdapter");
 const ScannerController = require("../src/controllers/ScannerController");
@@ -8,6 +9,7 @@ const {
 } = require("../src/engines/technical/IntradaySignalEngine");
 const { RiskManager } = require("../src/engines/technical/RiskManager");
 const { ConfidenceScorer } = require("../src/engines/technical/ConfidenceScorer");
+const { DerivativesOiEngine } = require("../src/engines/derivatives/DerivativesOiEngine");
 
 describe("hexagonal architecture boundaries", () => {
   it("exposes Zerodha adapters for external Kite dependencies", () => {
@@ -21,12 +23,16 @@ describe("hexagonal architecture boundaries", () => {
         getHistoricalCandlesByCount: jest.fn(),
       },
     })).toEqual(expect.any(KiteHistoricalAdapter));
+    expect(new KiteDerivativesAdapter({
+      client: { getOptionChain: jest.fn() },
+    })).toEqual(expect.any(KiteDerivativesAdapter));
   });
 
   it("keeps technical decision components under engine layer", () => {
     expect(new IntradaySignalEngine()).toEqual(expect.any(IntradaySignalEngine));
     expect(new RiskManager()).toEqual(expect.any(RiskManager));
     expect(new ConfidenceScorer()).toEqual(expect.any(ConfidenceScorer));
+    expect(new DerivativesOiEngine()).toEqual(expect.any(DerivativesOiEngine));
   });
 
   it("lets scanner controller run through runtime service", async () => {

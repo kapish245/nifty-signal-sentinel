@@ -8,6 +8,8 @@ const {
 } = require("../signals/SignalContractBuilder");
 const { CandleRequirementService } = require("../market/CandleRequirementService");
 const { MarketClock } = require("../market/MarketClock");
+const { DerivativesConfirmationEngine } = require("../engines/derivatives/DerivativesConfirmationEngine");
+const { DerivativesOiEngine } = require("../engines/derivatives/DerivativesOiEngine");
 const MultiTimeframeAnalyzer = require("../engines/technical/MultiTimeframeAnalyzer");
 
 const MIN_REQUIRED_CANDLES = 50;
@@ -70,6 +72,20 @@ function deriveMockOiSignal(priceTrend) {
   }
 
   return "neutral";
+}
+
+function createUnavailableDerivatives(reason = "DERIVATIVES_PROVIDER_NOT_CONFIGURED") {
+  return {
+    status: "unavailable",
+    derivativesBias: "neutral",
+    oiConfirmation: "unavailable",
+    buildupSignal: "neutral",
+    pcr: null,
+    maxPain: null,
+    oiSupport: null,
+    oiResistance: null,
+    reason,
+  };
 }
 
 function createRealIndicatorProvider({
@@ -157,7 +173,8 @@ function createRealIndicatorProvider({
 
     const isWarmupDegraded = candles.length < effectiveTargetCandleCount;
     const indicators = multiTimeframeAnalyzer.analyze({ frames, ltp });
-    indicators.oiSignal = deriveMockOiSignal(indicators.priceTrend);
+    indicators.ltp = ltp;
+    indicators.oiSignal = "neutral";
 
     return {
       candles,
@@ -283,14 +300,78 @@ function buildSignalReason(signal, indicators) {
   }
 
   if (signal === SIGNAL_TYPES.INTRADAY_LONG) {
-    return "Bullish continuation: trend up, EMA bullish, RSI healthy, volume/oi supportive";
+    return `Bullish continuation: trend up, EMA bullish, RSI healthy; ${getDerivativesReason(indicators)}`;
   }
 
   if (signal === SIGNAL_TYPES.INTRADAY_SHORT) {
-    return "Bearish breakdown: trend down, EMA bearish, RSI weak, volume/oi supportive";
+    return `Bearish breakdown: trend down, EMA bearish, RSI weak; ${getDerivativesReason(indicators)}`;
   }
 
   return "No high-confidence setup detected";
+}
+
+function getDerivativesReason(indicators) {
+  const derivatives = indicators?.derivatives;
+
+  if (!derivatives || derivatives.status !== "available") {
+    return "derivatives unavailable";
+  }
+
+  return `derivatives ${derivatives.oiConfirmation} with ${derivatives.derivativesBias} bias`;
+}
+
+async function enrichIndicatorsWithDerivatives({
+  indicators,
+  derivativesProvider,
+  derivativesEngine,
+  symbol,
+  ltp,
+  logger,
+  ids,
+}) {
+  const derivatives = await getDerivativesAnalysis({
+    derivativesProvider,
+    derivativesEngine,
+    symbol,
+    ltp,
+    logger,
+    ids,
+  });
+
+  return {
+    ...indicators,
+    oiSignal: derivatives.buildupSignal || "neutral",
+    derivatives,
+  };
+}
+
+async function getDerivativesAnalysis({ derivativesProvider, derivativesEngine, symbol, ltp, logger, ids }) {
+  if (!derivativesProvider || typeof derivativesProvider.getOptionChain !== "function") {
+    return createUnavailableDerivatives();
+  }
+
+  try {
+    const optionChain = await derivativesProvider.getOptionChain({ symbol, spotPrice: ltp });
+    return derivativesEngine.analyze(optionChain);
+  } catch (error) {
+    logger.warn({ ...ids, symbol, error: error.message }, "Derivatives analysis unavailable");
+    return createUnavailableDerivatives("DERIVATIVES_FETCH_ERROR");
+  }
+}
+
+function attachDerivativesConfirmation({ indicators, signal_type, derivativesConfirmationEngine }) {
+  const confirmation = derivativesConfirmationEngine.confirm({
+    signal_type,
+    derivatives: indicators.derivatives,
+  });
+
+  return {
+    ...indicators,
+    derivatives: {
+      ...indicators.derivatives,
+      ...confirmation,
+    },
+  };
 }
 
 function createSignalService({
@@ -303,6 +384,9 @@ function createSignalService({
   candleSufficiencyMode = CANDLE_SUFFICIENCY_MODES.ADAPTIVE,
   logger = createDefaultLogger(),
   contractBuilder = new SignalContractBuilder(),
+  derivativesProvider,
+  derivativesEngine = new DerivativesOiEngine(),
+  derivativesConfirmationEngine = new DerivativesConfirmationEngine(),
   runContext,
   candleRequirementService = new CandleRequirementService(),
   marketClock = new MarketClock(),
@@ -420,7 +504,21 @@ function createSignalService({
       }
 
       indicators = validateIndicatorPayload(indicatorResult.indicators);
+      indicators = await enrichIndicatorsWithDerivatives({
+        indicators,
+        derivativesProvider,
+        derivativesEngine,
+        symbol: normalizedSymbol,
+        ltp: ltpSnapshot.lastPrice,
+        logger: resolvedLogger,
+        ids,
+      });
       const signal = evaluateSignal(indicators);
+      indicators = attachDerivativesConfirmation({
+        indicators,
+        signal_type: signal,
+        derivativesConfirmationEngine,
+      });
       const reason = buildSignalReason(signal, indicators);
       const signal_id = ACTIONABLE_SIGNAL_TYPES.has(signal) && runContext?.createSignalId
         ? runContext.createSignalId({ symbol: normalizedSymbol, signal_type: signal })
@@ -465,6 +563,9 @@ function createSignalServiceFromConfig({
   candleSufficiencyMode,
   logger,
   contractBuilder,
+  derivativesProvider,
+  derivativesEngine,
+  derivativesConfirmationEngine,
   runContext,
   candleRequirementService,
   marketClock,
@@ -492,6 +593,9 @@ function createSignalServiceFromConfig({
     candleSufficiencyMode,
     logger,
     contractBuilder,
+    derivativesProvider,
+    derivativesEngine,
+    derivativesConfirmationEngine,
     runContext,
     candleRequirementService,
     marketClock,
@@ -505,6 +609,7 @@ module.exports = {
   createSignalServiceFromConfig,
   createRealIndicatorProvider,
   deriveMockOiSignal,
+  createUnavailableDerivatives,
   getDefaultLookbackMinutes,
   getDefaultTargetCandleCount,
   MIN_REQUIRED_CANDLES,

@@ -127,9 +127,16 @@ class SignalContractBuilder {
       resistance: indicators?.resistance || null,
       breakout: indicators?.breakout?.type || null,
       multi_timeframe_bias: indicators?.multiTimeframeBias || null,
+      derivatives_status: indicators?.derivatives?.status || null,
+      derivatives_bias: indicators?.derivatives?.derivativesBias || null,
+      oi_confirmation: indicators?.derivatives?.oiConfirmation || null,
+      pcr: indicators?.derivatives?.pcr || null,
+      max_pain: indicators?.derivatives?.maxPain || null,
+      oi_support: indicators?.derivatives?.oiSupport || null,
+      oi_resistance: indicators?.derivatives?.oiResistance || null,
       sufficiency_mode: meta?.sufficiencyMode || null,
       is_degraded: Boolean(meta?.isDegraded),
-      source: "phase_4_technical_engine",
+      source: "phase_5_derivatives_oi_layer",
     };
   }
 }

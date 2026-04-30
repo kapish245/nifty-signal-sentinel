@@ -25,6 +25,8 @@ class ConfidenceScorer {
     if (indicators?.multiTimeframeBias === "bearish" && signal_type === SIGNAL_TYPES.INTRADAY_SHORT) score += 4;
     if (indicators?.macd?.bias === "bullish" && signal_type === SIGNAL_TYPES.INTRADAY_LONG) score += 2;
     if (indicators?.macd?.bias === "bearish" && signal_type === SIGNAL_TYPES.INTRADAY_SHORT) score += 2;
+    if (indicators?.derivatives?.oiConfirmation === "confirms") score += 5;
+    if (indicators?.derivatives?.oiConfirmation === "conflicts") score -= 8;
 
     return score;
   }

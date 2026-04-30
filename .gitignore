@@ -3,6 +3,5 @@ coverage
 tmp
 planning/
 logs/
-data/
 .env
 npm-debug.log*

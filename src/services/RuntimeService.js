@@ -1,6 +1,7 @@
 const path = require("path");
 
 const KiteAuthAdapter = require("../adapters/zerodha/KiteAuthAdapter");
+const KiteDerivativesAdapter = require("../adapters/zerodha/KiteDerivativesAdapter");
 const KiteHistoricalAdapter = require("../adapters/zerodha/KiteHistoricalAdapter");
 const KiteQuoteAdapter = require("../adapters/zerodha/KiteQuoteAdapter");
 const { createSignalAnalysisService } = require("./SignalAnalysisService");
@@ -29,7 +30,14 @@ class RuntimeService {
     const accessToken = await this.resolveAccessToken({ logger });
     const quoteAdapter = this.#createQuoteAdapter({ logger, accessToken });
     const historicalAdapter = this.#createHistoricalAdapter({ logger, accessToken });
-    const signalService = this.#createSignalService({ logger, runContext, quoteAdapter, historicalAdapter });
+    const derivativesAdapter = this.#createDerivativesAdapter({ logger, accessToken });
+    const signalService = this.#createSignalService({
+      logger,
+      runContext,
+      quoteAdapter,
+      historicalAdapter,
+      derivativesAdapter,
+    });
     const scannerService = this.#createScannerService({ logger, runContext, signalService });
 
     return {
@@ -89,10 +97,20 @@ class RuntimeService {
     });
   }
 
-  #createSignalService({ logger, runContext, quoteAdapter, historicalAdapter }) {
+  #createDerivativesAdapter({ logger, accessToken }) {
+    return new KiteDerivativesAdapter({
+      apiKey: this.#env.ZERODHA_API_KEY,
+      accessToken,
+      logger: logger.child("adapters:zerodha:derivatives"),
+      rateLimiter: createRateLimiter({ maxConcurrent: 1, minDelayMs: 1100 }),
+    });
+  }
+
+  #createSignalService({ logger, runContext, quoteAdapter, historicalAdapter, derivativesAdapter }) {
     return createSignalAnalysisService({
       kiteClient: quoteAdapter,
       historicalClient: historicalAdapter,
+      derivativesProvider: derivativesAdapter,
       logger: logger.child("services:signal"),
       runContext,
       marketClock: new MarketClock(),
