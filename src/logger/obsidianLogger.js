@@ -21,21 +21,90 @@ function getTimePart(date) {
   return formatter.format(date);
 }
 
-function formatSignalMarkdown({ timestamp, symbol, ltp, signal, indicators, reason }) {
+function formatTargets(targets) {
+  if (!Array.isArray(targets) || targets.length === 0) {
+    return "n/a";
+  }
+
+  return targets.join(" / ");
+}
+
+function formatEntryZone(entry_zone) {
+  if (!entry_zone || typeof entry_zone !== "object") {
+    return "n/a";
+  }
+
+  return `${entry_zone.min} - ${entry_zone.max}`;
+}
+
+function formatSignalMarkdown(signalPayload) {
+  const {
+    timestamp,
+    symbol,
+    ltp,
+    indicators,
+    reason,
+    signal_type,
+    signal,
+    trade_action,
+    entry_zone,
+    stop_loss,
+    targets,
+    risk_reward,
+    confidence_score,
+    valid_until,
+    setup_name,
+    invalidation_reason,
+    run_id,
+    scan_id,
+    symbol_analysis_id,
+    signal_id,
+  } = signalPayload;
   const indicatorPayload = indicators || {};
   const trend = indicatorPayload.emaAlignment || indicatorPayload.priceTrend || "unknown";
   const rsi = typeof indicatorPayload.rsi === "number" ? Number(indicatorPayload.rsi.toFixed(2)) : "n/a";
+  const resolvedSignal = signal_type || signal || "NO_TRADE";
 
   return [
-    `## Time: ${getTimePart(timestamp)}`,
+    `## ${getTimePart(timestamp)} - ${symbol} - ${resolvedSignal}`,
     "",
-    `### Symbol: ${symbol}`,
+    `- Signal ID: ${signal_id || "n/a"}`,
+    `- Run ID: ${run_id || "n/a"}`,
+    `- Scan ID: ${scan_id || "n/a"}`,
+    `- Symbol Analysis ID: ${symbol_analysis_id || "n/a"}`,
     "",
-    `* Signal: ${signal || "NO_TRADE"}`,
-    `* Price: ${typeof ltp === "number" ? ltp : "n/a"}`,
-    `* RSI: ${rsi}`,
-    `* Trend: ${trend}`,
-    `* Reason: ${reason || "n/a"}`,
+    "### Trade Plan",
+    "",
+    `- Action: ${trade_action || "NONE"}`,
+    `- Price: ${typeof ltp === "number" ? ltp : "n/a"}`,
+    `- Entry: ${formatEntryZone(entry_zone)}`,
+    `- Stop Loss: ${typeof stop_loss === "number" ? stop_loss : "n/a"}`,
+    `- Targets: ${formatTargets(targets)}`,
+    `- Risk Reward: ${risk_reward || "n/a"}`,
+    `- Confidence: ${typeof confidence_score === "number" ? `${confidence_score}%` : "n/a"}`,
+    `- Valid Until: ${valid_until || "n/a"}`,
+    "",
+    "### Evidence",
+    "",
+    `- Setup: ${setup_name || "n/a"}`,
+    `- RSI: ${rsi}`,
+    `- Trend: ${trend}`,
+    `- Volume: ${indicatorPayload.volume || "n/a"}`,
+    `- VWAP: ${typeof indicatorPayload.vwap === "number" ? indicatorPayload.vwap : "n/a"}`,
+    `- ATR: ${typeof indicatorPayload.atr === "number" ? indicatorPayload.atr : "n/a"}`,
+    `- MACD Bias: ${indicatorPayload.macd?.bias || "n/a"}`,
+    `- Support: ${typeof indicatorPayload.support === "number" ? indicatorPayload.support : "n/a"}`,
+    `- Resistance: ${typeof indicatorPayload.resistance === "number" ? indicatorPayload.resistance : "n/a"}`,
+    `- Breakout: ${indicatorPayload.breakout?.type || "n/a"}`,
+    `- Multi-Timeframe Bias: ${indicatorPayload.multiTimeframeBias || "n/a"}`,
+    `- OI Signal: ${indicatorPayload.oiSignal || "n/a"}`,
+    `- Reason: ${reason || "n/a"}`,
+    `- Invalidation: ${invalidation_reason || "n/a"}`,
+    "",
+    "### Post-Market Review",
+    "",
+    "- Outcome: Pending",
+    "- Mistake/Learning: Pending",
     "",
   ].join("\n");
 }

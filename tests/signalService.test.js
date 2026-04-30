@@ -1,4 +1,5 @@
 const {
+  CANDLE_SUFFICIENCY_MODES,
   createSignalService,
   MIN_REQUIRED_CANDLES,
 } = require("../src/services/signalService");
@@ -43,13 +44,23 @@ describe("signalService", () => {
     expect(result).toMatchObject({
       symbol: "NSE:INFY",
       ltp: 1580,
+      signal_type: "INTRADAY_LONG",
+      signal: "INTRADAY_LONG",
+      trade_action: "BUY",
+      entry_zone: {
+        min: expect.any(Number),
+        max: expect.any(Number),
+      },
+      stop_loss: expect.any(Number),
+      targets: expect.any(Array),
+      confidence_score: expect.any(Number),
+      valid_until: expect.any(String),
       indicators: expect.objectContaining({
         priceTrend: "up",
         emaAlignment: "bullish",
         volume: "increasing",
         oiSignal: "long_buildup",
       }),
-      signal: "HOLD",
       reason: expect.any(String),
     });
     expect(result.indicators.rsi).toEqual(expect.any(Number));
@@ -60,7 +71,13 @@ describe("signalService", () => {
       "NSE:INFY",
       "5minute",
       600,
-      { instrumentToken: 408065 },
+      expect.objectContaining({
+        instrumentToken: 408065,
+        maxLookbackMinutes: 10080,
+        marketContext: expect.objectContaining({
+          mode: expect.any(String),
+        }),
+      }),
     );
   });
 
@@ -91,12 +108,18 @@ describe("signalService", () => {
       result,
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       symbol: "NSE:INFY",
       ltp: 1520.4,
+      signal_type: "NO_TRADE",
       signal: "NO_TRADE",
+      trade_action: "NONE",
       reason: "INSUFFICIENT_DATA",
       indicators: null,
+      entry_zone: null,
+      stop_loss: null,
+      targets: [],
+      confidence_score: 0,
       meta: {
         receivedCandles: MIN_REQUIRED_CANDLES - 1,
         requiredCandles: MIN_REQUIRED_CANDLES,
@@ -128,17 +151,142 @@ describe("signalService", () => {
       { symbol: "NSE:INFY", indicatorProvider: "throws error" },
       result,
     );
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       symbol: "NSE:INFY",
       ltp: 1520.4,
+      signal_type: "NO_TRADE",
       signal: "NO_TRADE",
+      trade_action: "NONE",
       reason: "INDICATOR_ERROR",
       indicators: null,
+      entry_zone: null,
+      stop_loss: null,
+      targets: [],
+      confidence_score: 0,
       meta: {
         receivedCandles: 0,
         requiredCandles: MIN_REQUIRED_CANDLES,
       },
     });
     expect(logger.error).toHaveBeenCalled();
+  });
+
+  it("uses target-candle fetch path in adaptive mode", async () => {
+    const historicalClient = {
+      getHistoricalCandlesByCount: jest.fn().mockResolvedValue(buildCandles(80)),
+    };
+    const service = createSignalService({
+      kiteClient: {
+        getLTP: jest.fn().mockResolvedValue({
+          symbol: "NSE:INFY",
+          instrumentToken: 408065,
+          lastPrice: 1585,
+        }),
+      },
+      historicalClient,
+      candleSufficiencyMode: CANDLE_SUFFICIENCY_MODES.ADAPTIVE,
+      targetCandleCount: 80,
+    });
+
+    const result = await service.getSignal("NSE:INFY");
+
+    expect(result.signal_type).toMatch(/INTRADAY_LONG|INTRADAY_SHORT|NO_TRADE/);
+    expect(result.meta).toEqual(
+      expect.objectContaining({
+        sufficiencyMode: CANDLE_SUFFICIENCY_MODES.ADAPTIVE,
+        isDegraded: false,
+      }),
+    );
+    expect(historicalClient.getHistoricalCandlesByCount).toHaveBeenCalledWith(
+      "NSE:INFY",
+      "5minute",
+      80,
+      expect.objectContaining({
+        instrumentToken: 408065,
+        maxLookbackMinutes: 10080,
+        marketContext: expect.objectContaining({
+          mode: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it("returns NO_TRADE when candles are below the configured minimum", async () => {
+    const service = createSignalService({
+      kiteClient: {
+        getLTP: jest.fn().mockResolvedValue({
+          symbol: "NSE:INFY",
+          instrumentToken: 408065,
+          lastPrice: 1540,
+        }),
+      },
+      historicalClient: {
+        getHistoricalCandlesByCount: jest.fn().mockResolvedValue(buildCandles(28)),
+      },
+      candleSufficiencyMode: CANDLE_SUFFICIENCY_MODES.DEGRADED,
+    });
+
+    const result = await service.getSignal("NSE:INFY");
+
+    expect(result.signal_type).toBe("NO_TRADE");
+    expect(result.indicators).toBeNull();
+    expect(result.meta).toEqual(
+      expect.objectContaining({
+        receivedCandles: 28,
+        requiredCandles: 50,
+      }),
+    );
+  });
+
+  it("marks signal as degraded when minimum candles exist but target warmup is short", async () => {
+    const service = createSignalService({
+      kiteClient: {
+        getLTP: jest.fn().mockResolvedValue({
+          symbol: "NSE:INFY",
+          instrumentToken: 408065,
+          lastPrice: 1585,
+        }),
+      },
+      historicalClient: {
+        getHistoricalCandlesByCount: jest.fn().mockResolvedValue(buildCandles(80)),
+      },
+      targetCandleCount: 120,
+    });
+
+    const result = await service.getSignal("NSE:INFY");
+
+    expect(result.indicators).toEqual(expect.any(Object));
+    expect(result.meta).toEqual(
+      expect.objectContaining({
+        isDegraded: true,
+        degradedReason: "BELOW_TARGET_CANDLES",
+        confidenceCap: 0.6,
+      }),
+    );
+    expect(result.confidence_score).toBeLessThanOrEqual(60);
+  });
+
+  it("blocks live intraday signal generation outside allowed market modes when enforced", async () => {
+    const service = createSignalService({
+      kiteClient: {
+        getLTP: jest.fn(),
+      },
+      historicalClient: {
+        getHistoricalCandlesByCount: jest.fn(),
+      },
+      marketClock: {
+        getMarketContext: () => ({
+          mode: "PRE_MARKET",
+          is_trade_signal_allowed: false,
+        }),
+      },
+      enforceMarketSignalMode: true,
+    });
+
+    const result = await service.getSignal("NSE:INFY");
+
+    expect(result.signal_type).toBe("NO_TRADE");
+    expect(result.reason).toBe("MARKET_MODE_BLOCKED");
+    expect(result.meta.marketContext.mode).toBe("PRE_MARKET");
   });
 });

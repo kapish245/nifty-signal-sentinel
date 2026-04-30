@@ -2,7 +2,7 @@ const { evaluateSignal } = require("../src/signals/signalEngine");
 const { logTestCase } = require("./utils/testCaseLogger");
 
 describe("signalEngine", () => {
-  it("returns HOLD for a strong bullish continuation", () => {
+  it("returns INTRADAY_LONG for a strong bullish continuation", () => {
     const result = evaluateSignal({
       priceTrend: "up",
       emaAlignment: "bullish",
@@ -10,9 +10,9 @@ describe("signalEngine", () => {
       volume: "increasing",
       oiSignal: "long_buildup",
     });
-    logTestCase("signalEngine: HOLD condition", { priceTrend: "up", emaAlignment: "bullish", rsi: 61 }, { result });
+    logTestCase("signalEngine: INTRADAY_LONG condition", { priceTrend: "up", emaAlignment: "bullish", rsi: 61 }, { result });
 
-    expect(result).toBe("HOLD");
+    expect(result).toBe("INTRADAY_LONG");
   });
 
   it("returns NO_TRADE for weak or sideways market structure", () => {
@@ -28,7 +28,7 @@ describe("signalEngine", () => {
     expect(result).toBe("NO_TRADE");
   });
 
-  it("returns SELL for a bearish breakdown", () => {
+  it("returns INTRADAY_SHORT for a bearish breakdown", () => {
     const result = evaluateSignal({
       priceTrend: "down",
       emaAlignment: "bearish",
@@ -36,8 +36,8 @@ describe("signalEngine", () => {
       volume: "increasing",
       oiSignal: "short_buildup",
     });
-    logTestCase("signalEngine: SELL condition", { priceTrend: "down", emaAlignment: "bearish", rsi: 34 }, { result });
+    logTestCase("signalEngine: INTRADAY_SHORT condition", { priceTrend: "down", emaAlignment: "bearish", rsi: 34 }, { result });
 
-    expect(result).toBe("SELL");
+    expect(result).toBe("INTRADAY_SHORT");
   });
 });

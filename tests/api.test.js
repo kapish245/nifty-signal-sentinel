@@ -298,4 +298,57 @@ describe("Kite market data client", () => {
       },
     );
   });
+
+  it("should fetch historical candles by target count with expanding lookback", async () => {
+    const responses = [
+      {
+        data: {
+          status: "success",
+          data: {
+            candles: Array.from({ length: 20 }, (_, index) => [
+              `2026-04-28T09:${String(index).padStart(2, "0")}:00+05:30`,
+              100,
+              102,
+              99,
+              101,
+              1000,
+              0,
+            ]),
+          },
+        },
+      },
+      {
+        data: {
+          status: "success",
+          data: {
+            candles: Array.from({ length: 70 }, (_, index) => [
+              `2026-04-28T10:${String(index % 60).padStart(2, "0")}:00+05:30`,
+              100,
+              102,
+              99,
+              101,
+              1000,
+              0,
+            ]),
+          },
+        },
+      },
+    ];
+    axios.get.mockImplementation(() => Promise.resolve(responses.shift()));
+    const client = createHistoricalDataClient({
+      apiKey: "kite_key",
+      accessToken: "access_123",
+      instrumentTokenResolver: jest.fn().mockResolvedValue(408065),
+      nowProvider: () => new Date("2026-04-28T10:00:00.000Z"),
+    });
+
+    const candles = await client.getHistoricalCandlesByCount(
+      "NSE:INFY",
+      "5minute",
+      50,
+    );
+
+    expect(candles.length).toBe(50);
+    expect(axios.get).toHaveBeenCalledTimes(2);
+  });
 });

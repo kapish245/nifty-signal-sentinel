@@ -1,4 +1,5 @@
-const MARKET_TIME_ZONE = "Asia/Kolkata";
+const { MARKET_TIME_ZONE, MarketClock } = require("../market/MarketClock");
+
 const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
 
 function createDefaultLogger() {
@@ -10,33 +11,8 @@ function createDefaultLogger() {
   };
 }
 
-function getIstDateParts(date) {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: MARKET_TIME_ZONE,
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  const parts = formatter.formatToParts(date);
-
-  return {
-    weekday: parts.find((part) => part.type === "weekday")?.value,
-    hour: Number(parts.find((part) => part.type === "hour")?.value),
-    minute: Number(parts.find((part) => part.type === "minute")?.value),
-  };
-}
-
 function isMarketOpen(date = new Date()) {
-  const { weekday, hour, minute } = getIstDateParts(date);
-
-  if (["Sat", "Sun"].includes(weekday)) {
-    return false;
-  }
-
-  const minutesSinceMidnight = hour * 60 + minute;
-
-  return minutesSinceMidnight >= 9 * 60 + 15 && minutesSinceMidnight <= 15 * 60 + 30;
+  return new MarketClock({ now_provider: () => date }).getMarketContext().is_market_open;
 }
 
 function startScheduler({

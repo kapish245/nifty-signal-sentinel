@@ -53,6 +53,8 @@ describe("live market data integration", () => {
       signalService = createSignalService({
         kiteClient,
         historicalClient,
+        candleSufficiencyMode: "degraded",
+        targetCandleCount: 120,
       });
     }, 20000);
 
@@ -102,7 +104,7 @@ describe("live market data integration", () => {
           expect.objectContaining({
             symbol: "NSE:INFY",
             ltp: expect.any(Number),
-            signal: expect.stringMatching(/HOLD|SELL|NO_TRADE/),
+            signal_type: expect.stringMatching(/INTRADAY_LONG|INTRADAY_SHORT|NO_TRADE/),
           }),
         );
         if (signal.reason === "INSUFFICIENT_DATA") {
@@ -115,6 +117,11 @@ describe("live market data integration", () => {
           );
         } else {
           expect(signal.indicators).toEqual(expect.any(Object));
+          expect(signal.meta).toEqual(
+            expect.objectContaining({
+              sufficiencyMode: expect.stringMatching(/strict|adaptive|degraded/),
+            }),
+          );
         }
       },
       30000,

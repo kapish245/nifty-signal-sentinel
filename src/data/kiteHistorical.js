@@ -4,7 +4,13 @@ const { KITE_API_BASE_URL, createKiteClient } = require("./kiteClient");
 
 const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_MAX_RETRIES = 1;
-const SUPPORTED_INTERVALS = new Set(["minute", "5minute"]);
+const SUPPORTED_INTERVALS = new Set(["minute", "5minute", "15minute", "day"]);
+const INTERVAL_MINUTES = {
+  minute: 1,
+  "5minute": 5,
+  "15minute": 15,
+  day: 24 * 60,
+};
 
 function requireNonEmptyString(value, fieldName) {
   if (typeof value !== "string" || value.trim() === "") {
@@ -18,7 +24,7 @@ function requireSupportedInterval(interval) {
   const normalizedInterval = requireNonEmptyString(interval, "Interval");
 
   if (!SUPPORTED_INTERVALS.has(normalizedInterval)) {
-    throw new Error("Interval must be one of: minute, 5minute");
+    throw new Error("Interval must be one of: minute, 5minute, 15minute, day");
   }
 
   return normalizedInterval;
@@ -35,6 +41,14 @@ function requireLookbackMinutes(lookbackMinutes) {
   return lookbackMinutes;
 }
 
+function requireTargetCandles(targetCandles) {
+  if (!Number.isInteger(targetCandles) || targetCandles <= 0) {
+    throw new Error("targetCandles must be a positive integer");
+  }
+
+  return targetCandles;
+}
+
 function requireInstrumentToken(instrumentToken) {
   if (
     typeof instrumentToken !== "number" ||
@@ -49,6 +63,7 @@ function requireInstrumentToken(instrumentToken) {
 
 function createDefaultLogger() {
   return {
+    debug: () => undefined,
     warn: () => undefined,
     error: () => undefined,
   };
@@ -90,12 +105,23 @@ async function runWithRateLimiter(rateLimiter, task) {
 }
 
 function formatDateTime(date) {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  const hours = String(date.getUTCHours()).padStart(2, "0");
-  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
-  const seconds = String(date.getUTCSeconds()).padStart(2, "0");
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const valueByType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const year = valueByType.year;
+  const month = valueByType.month;
+  const day = valueByType.day;
+  const hours = valueByType.hour;
+  const minutes = valueByType.minute;
+  const seconds = valueByType.second;
 
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
@@ -135,6 +161,33 @@ function validateHistoricalResponse(payload) {
   }
 
   return candles.map(normalizeCandle);
+}
+
+function getDefaultMaxLookbackMinutes(interval) {
+  if (interval === "day") return 140 * 24 * 60;
+  if (interval === "15minute") return 14 * 24 * 60;
+  if (interval === "5minute") return 7 * 24 * 60;
+
+  return 2 * 24 * 60;
+}
+
+function buildLookbackSequence({
+  interval,
+  targetCandles,
+  maxLookbackMinutes,
+} = {}) {
+  const intervalMinutes = INTERVAL_MINUTES[interval];
+  const minimumLookback = Math.max(intervalMinutes * targetCandles, intervalMinutes * 50);
+  const lookbacks = [];
+  let nextLookback = minimumLookback;
+
+  while (nextLookback < maxLookbackMinutes) {
+    lookbacks.push(nextLookback);
+    nextLookback *= 2;
+  }
+
+  lookbacks.push(maxLookbackMinutes);
+  return [...new Set(lookbacks)];
 }
 
 function createHistoricalDataClient({
@@ -202,6 +255,17 @@ function createHistoricalDataClient({
         to: formatDateTime(toDate),
         oi: "1",
       });
+      logger.debug(
+        {
+          symbol: normalizedSymbol,
+          interval: normalizedInterval,
+          lookbackMinutes: normalizedLookbackMinutes,
+          from: formatDateTime(fromDate),
+          to: formatDateTime(toDate),
+          marketContext: options.marketContext || null,
+        },
+        "Fetching Zerodha historical candles",
+      );
       return runWithRateLimiter(rateLimiter, async () => {
         let response;
 
@@ -252,12 +316,59 @@ function createHistoricalDataClient({
         return validateHistoricalResponse(response?.data);
       });
     },
+    async getHistoricalCandlesByCount(
+      symbol,
+      interval,
+      targetCandles,
+      options = {},
+    ) {
+      const normalizedSymbol = requireNonEmptyString(symbol, "Symbol");
+      const normalizedInterval = requireSupportedInterval(interval);
+      const normalizedTargetCandles = requireTargetCandles(targetCandles);
+      const maxLookbackMinutes = requireLookbackMinutes(
+        options.maxLookbackMinutes || getDefaultMaxLookbackMinutes(normalizedInterval),
+      );
+      const lookbackSequence = buildLookbackSequence({
+        interval: normalizedInterval,
+        targetCandles: normalizedTargetCandles,
+        maxLookbackMinutes,
+      });
+      let candles = [];
+
+      for (const lookbackMinutes of lookbackSequence) {
+        candles = await this.getHistoricalCandles(
+          normalizedSymbol,
+          normalizedInterval,
+          lookbackMinutes,
+          options,
+        );
+        logger.debug(
+          {
+            symbol: normalizedSymbol,
+            interval: normalizedInterval,
+            targetCandles: normalizedTargetCandles,
+            receivedCandles: candles.length,
+            lookbackMinutes,
+            maxLookbackMinutes,
+            marketContext: options.marketContext || null,
+          },
+          "Evaluated historical candle count fetch",
+        );
+        if (candles.length >= normalizedTargetCandles) {
+          return candles.slice(-normalizedTargetCandles);
+        }
+      }
+
+      return candles;
+    },
   };
 }
 
 module.exports = {
   createHistoricalDataClient,
+  buildLookbackSequence,
   formatDateTime,
+  getDefaultMaxLookbackMinutes,
   normalizeCandle,
   validateHistoricalResponse,
 };

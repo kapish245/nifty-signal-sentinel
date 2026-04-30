@@ -2,8 +2,7 @@ node_modules
 coverage
 tmp
 planning/
-Planning - *.md
 logs/
-# .env
-npm-debug.log*
+data/
 .env
+npm-debug.log*

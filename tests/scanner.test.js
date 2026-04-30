@@ -5,13 +5,14 @@ const {
 const { logTestCase } = require("./utils/testCaseLogger");
 
 describe("scannerService", () => {
-  it("scans multiple stocks and returns only HOLD and SELL signals", async () => {
+  it("scans multiple stocks and returns only actionable intraday signals", async () => {
     const signalService = {
       getSignal: jest
         .fn()
         .mockResolvedValueOnce({
           symbol: "NSE:INFY",
-          signal: "HOLD",
+          signal: "INTRADAY_LONG",
+          signal_type: "INTRADAY_LONG",
           ltp: 1500,
           indicators: { rsi: 61 },
         })
@@ -23,7 +24,8 @@ describe("scannerService", () => {
         })
         .mockResolvedValueOnce({
           symbol: "NSE:RELIANCE",
-          signal: "SELL",
+          signal: "INTRADAY_SHORT",
+          signal_type: "INTRADAY_SHORT",
           ltp: 2500,
           indicators: { rsi: 35 },
         }),
@@ -45,22 +47,24 @@ describe("scannerService", () => {
       result,
     );
 
-    expect(signalService.getSignal).toHaveBeenNthCalledWith(1, "NSE:INFY");
-    expect(signalService.getSignal).toHaveBeenNthCalledWith(2, "NSE:TCS");
-    expect(signalService.getSignal).toHaveBeenNthCalledWith(3, "NSE:RELIANCE");
+    expect(signalService.getSignal).toHaveBeenNthCalledWith(1, "NSE:INFY", expect.any(Object));
+    expect(signalService.getSignal).toHaveBeenNthCalledWith(2, "NSE:TCS", expect.any(Object));
+    expect(signalService.getSignal).toHaveBeenNthCalledWith(3, "NSE:RELIANCE", expect.any(Object));
     expect(result).toMatchObject({
       scannedCount: 3,
       requestedCount: 3,
       matches: [
         {
           symbol: "NSE:INFY",
-          signal: "HOLD",
+          signal: "INTRADAY_LONG",
+          signal_type: "INTRADAY_LONG",
           ltp: 1500,
           indicators: { rsi: 61 },
         },
         {
           symbol: "NSE:RELIANCE",
-          signal: "SELL",
+          signal: "INTRADAY_SHORT",
+          signal_type: "INTRADAY_SHORT",
           ltp: 2500,
           indicators: { rsi: 35 },
         },
@@ -80,14 +84,14 @@ describe("scannerService", () => {
         .fn()
         .mockResolvedValueOnce({
           symbol: "NSE:INFY",
-          signal: "HOLD",
+          signal: "INTRADAY_LONG",
           ltp: 1500,
           indicators: { rsi: 61 },
         })
         .mockRejectedValueOnce(new Error("Temporary upstream error"))
         .mockResolvedValueOnce({
           symbol: "NSE:RELIANCE",
-          signal: "SELL",
+          signal: "INTRADAY_SHORT",
           ltp: 2500,
           indicators: { rsi: 35 },
         }),
@@ -109,10 +113,10 @@ describe("scannerService", () => {
     expect(result.requestedCount).toBe(3);
     expect(result.matches).toHaveLength(2);
     expect(result.failures).toEqual([
-      {
+      expect.objectContaining({
         symbol: "NSE:TCS",
         error: "Temporary upstream error",
-      },
+      }),
     ]);
     expect(result.aborted).toBe(false);
   });
@@ -134,7 +138,7 @@ describe("scannerService", () => {
         })
         .mockResolvedValueOnce({
           symbol: "NSE:RELIANCE",
-          signal: "SELL",
+          signal: "INTRADAY_SHORT",
           ltp: 2500,
           indicators: { rsi: 35 },
         }),
@@ -158,7 +162,7 @@ describe("scannerService", () => {
       matches: [
         {
           symbol: "NSE:RELIANCE",
-          signal: "SELL",
+          signal: "INTRADAY_SHORT",
           ltp: 2500,
           indicators: { rsi: 35 },
         },
@@ -196,7 +200,7 @@ describe("scannerService", () => {
         })
         .mockResolvedValueOnce({
           symbol: "NSE:RELIANCE",
-          signal: "HOLD",
+          signal: "INTRADAY_LONG",
           ltp: 2500,
           indicators: { rsi: 61 },
         }),
@@ -217,12 +221,12 @@ describe("scannerService", () => {
     expect(result.scannedCount).toBe(3);
     expect(result.failures).toEqual([]);
     expect(result.matches).toEqual([
-      {
+      expect.objectContaining({
         symbol: "NSE:RELIANCE",
-        signal: "HOLD",
+        signal: "INTRADAY_LONG",
         ltp: 2500,
         indicators: { rsi: 61 },
-      },
+      }),
     ]);
     expect(result.aborted).toBe(false);
   });

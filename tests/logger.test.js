@@ -18,7 +18,7 @@ describe("structured logger", () => {
       enablePrettyConsole: false,
     });
 
-    logger.info({ symbol: "NSE:INFY", signal: "HOLD" }, "Signal logged");
+    logger.info({ symbol: "NSE:INFY", signal_type: "INTRADAY_LONG" }, "Signal logged");
     await waitForLogFlush();
 
     const systemDir = path.join(logsRootDir, "system");
@@ -33,7 +33,7 @@ describe("structured logger", () => {
       message: "Signal logged",
       data: {
         symbol: "NSE:INFY",
-        signal: "HOLD",
+        signal_type: "INTRADAY_LONG",
       },
     });
   });

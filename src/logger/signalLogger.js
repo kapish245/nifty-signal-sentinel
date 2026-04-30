@@ -30,9 +30,24 @@ function createSignalLogger({
       const filePath = path.join(logsDir, `${logDate}.json`);
       const entry = {
         timestamp: now.toISOString(),
+        run_id: signalPayload.run_id,
+        scan_id: signalPayload.scan_id,
+        symbol_analysis_id: signalPayload.symbol_analysis_id,
+        signal_id: signalPayload.signal_id,
         symbol: signalPayload.symbol,
-        signal: signalPayload.signal,
+        signal_type: signalPayload.signal_type || signalPayload.signal,
+        trade_action: signalPayload.trade_action,
         ltp: signalPayload.ltp,
+        entry_zone: signalPayload.entry_zone,
+        stop_loss: signalPayload.stop_loss,
+        targets: signalPayload.targets,
+        risk_reward: signalPayload.risk_reward,
+        confidence_score: signalPayload.confidence_score,
+        valid_until: signalPayload.valid_until,
+        setup_name: signalPayload.setup_name,
+        reason: signalPayload.reason,
+        invalidation_reason: signalPayload.invalidation_reason,
+        evidence: signalPayload.evidence,
         indicators: signalPayload.indicators,
       };
 
