@@ -37,6 +37,31 @@ function formatEntryZone(entry_zone) {
   return `${entry_zone.min} - ${entry_zone.max}`;
 }
 
+function formatPercent(value) {
+  if (value === null || value === undefined) return "n/a";
+  return `${value}%`;
+}
+
+function formatPositionContext(position_context) {
+  if (!position_context || position_context.has_position !== true) {
+    return [
+      "- Existing Position: No",
+      `- Position Interpretation: ${position_context?.interpretation || "No existing position found"}`,
+    ];
+  }
+
+  return [
+    "- Existing Position: Yes",
+    `- Quantity: ${position_context.quantity}`,
+    `- Average Price: ${position_context.average_price}`,
+    `- Position Value: ${position_context.position_value || "n/a"}`,
+    `- Allocation: ${formatPercent(position_context.allocation_percent)}`,
+    `- Unrealized P&L: ${position_context.unrealized_pnl || "n/a"}`,
+    `- Delivery Fallback: ${position_context.delivery_fallback?.reason || "n/a"}`,
+    `- Position Interpretation: ${position_context.interpretation || "n/a"}`,
+  ];
+}
+
 function formatSignalMarkdown(signalPayload) {
   const {
     timestamp,
@@ -59,6 +84,7 @@ function formatSignalMarkdown(signalPayload) {
     scan_id,
     symbol_analysis_id,
     signal_id,
+    position_context,
   } = signalPayload;
   const indicatorPayload = indicators || {};
   const trend = indicatorPayload.emaAlignment || indicatorPayload.priceTrend || "unknown";
@@ -83,6 +109,10 @@ function formatSignalMarkdown(signalPayload) {
     `- Risk Reward: ${risk_reward || "n/a"}`,
     `- Confidence: ${typeof confidence_score === "number" ? `${confidence_score}%` : "n/a"}`,
     `- Valid Until: ${valid_until || "n/a"}`,
+    "",
+    "### Position Context",
+    "",
+    ...formatPositionContext(position_context),
     "",
     "### Evidence",
     "",

@@ -19,6 +19,16 @@ function buildSignalPayload() {
     valid_until: "2026-04-30T05:30:00.000Z",
     reason: "Bullish continuation",
     invalidation_reason: "Exit near stop loss 1488.",
+    position_context: {
+      has_position: true,
+      quantity: 10,
+      average_price: 1400,
+      allocation_percent: 15,
+      unrealized_pnl: 1000,
+      delivery_fallback: {
+        is_allowed: true,
+      },
+    },
     evidence: {
       rsi: 61,
       ema_alignment: "bullish",
@@ -43,6 +53,7 @@ describe("DiscordSignalFormatter", () => {
     expect(content).toContain("Entry: 1497 - 1503");
     expect(content).toContain("Stop Loss: 1488");
     expect(content).toContain("Confidence: 77%");
+    expect(content).toContain("Position: holding 10 @ 1400, allocation 15%, P&L 1000");
     expect(content).toContain("Derivatives: status available, bias bullish, confirmation confirms");
     expect(content).toContain("Signal: signal_1");
   });

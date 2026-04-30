@@ -21,6 +21,18 @@ describe("obsidianLogger", () => {
       setup_name: "bullish_continuation_contract_mapping",
       invalidation_reason: "Avoid if price loses VWAP.",
       reason: "Bullish continuation",
+      position_context: {
+        has_position: true,
+        quantity: 10,
+        average_price: 1400,
+        position_value: 15000,
+        allocation_percent: 15,
+        unrealized_pnl: 1000,
+        delivery_fallback: {
+          reason: "Allowed only if swing context remains valid.",
+        },
+        interpretation: "Existing holding: treat this as an intraday setup.",
+      },
       indicators: {
         rsi: 61,
         emaAlignment: "bullish",
@@ -34,6 +46,9 @@ describe("obsidianLogger", () => {
     expect(markdown).toContain("- Entry: 1497 - 1503");
     expect(markdown).toContain("- Stop Loss: 1488");
     expect(markdown).toContain("- Confidence: 77%");
+    expect(markdown).toContain("### Position Context");
+    expect(markdown).toContain("- Existing Position: Yes");
+    expect(markdown).toContain("- Allocation: 15%");
     expect(markdown).toContain("### Post-Market Review");
   });
 });

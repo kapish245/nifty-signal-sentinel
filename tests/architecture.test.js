@@ -4,6 +4,8 @@ const KiteDerivativesAdapter = require("../src/adapters/zerodha/KiteDerivativesA
 const KiteHistoricalAdapter = require("../src/adapters/zerodha/KiteHistoricalAdapter");
 const KiteQuoteAdapter = require("../src/adapters/zerodha/KiteQuoteAdapter");
 const ScannerController = require("../src/controllers/ScannerController");
+const { PortfolioRepository } = require("../src/repositories/PortfolioRepository");
+const { PortfolioContextService } = require("../src/services/PortfolioContextService");
 const RuntimeService = require("../src/services/RuntimeService");
 const {
   IntradaySignalEngine,
@@ -41,6 +43,13 @@ describe("hexagonal architecture boundaries", () => {
     expect(new RiskManager()).toEqual(expect.any(RiskManager));
     expect(new ConfidenceScorer()).toEqual(expect.any(ConfidenceScorer));
     expect(new DerivativesOiEngine()).toEqual(expect.any(DerivativesOiEngine));
+  });
+
+  it("keeps portfolio context behind repository and service boundaries", () => {
+    const portfolioRepository = new PortfolioRepository({ filePath: "/tmp/portfolio.json" });
+
+    expect(portfolioRepository).toEqual(expect.any(PortfolioRepository));
+    expect(new PortfolioContextService({ portfolioRepository })).toEqual(expect.any(PortfolioContextService));
   });
 
   it("lets scanner controller run through runtime service", async () => {

@@ -12,6 +12,8 @@ const { createLogger } = require("../logger/logger");
 const { RunContext } = require("../logger/RunContext");
 const { CandleRequirementService } = require("../market/CandleRequirementService");
 const { MarketClock } = require("../market/MarketClock");
+const { PortfolioContextService } = require("./PortfolioContextService");
+const { PortfolioRepository } = require("../repositories/PortfolioRepository");
 const { createScannerService } = require("./ScannerService");
 const { createRateLimiter } = require("../utils/rateLimiter");
 
@@ -126,9 +128,21 @@ class RuntimeService {
       signalLogger: createSignalLogger(),
       obsidianLogger: createObsidianLogger({ isEnabled: this.#env.ENABLE_OBSIDIAN_LOG !== "false" }),
       discordNotifier: this.#createDiscordNotifier({ logger }),
+      portfolioContextService: this.#createPortfolioContextService({ logger }),
       logger: logger.child("services:scanner"),
       runContext,
     });
+  }
+
+  #createPortfolioContextService({ logger }) {
+    return new PortfolioContextService({
+      portfolioRepository: new PortfolioRepository({ filePath: this.#getPortfolioFilePath() }),
+      logger: logger.child("services:portfolio_context"),
+    });
+  }
+
+  #getPortfolioFilePath() {
+    return this.#env.PORTFOLIO_FILE_PATH || path.resolve(process.cwd(), "data", "portfolio.json");
   }
 
   #createDiscordNotifier({ logger }) {

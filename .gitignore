@@ -4,4 +4,5 @@ tmp
 planning/
 logs/
 .env
+data/portfolio.json
 npm-debug.log*

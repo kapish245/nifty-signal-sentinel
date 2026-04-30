@@ -43,6 +43,8 @@ class DiscordSignalFormatter {
       `Reason: ${formatValue(signalPayload.reason)}`,
       `Invalidation: ${formatValue(signalPayload.invalidation_reason)}`,
       "",
+      this.#formatPositionContext(signalPayload.position_context),
+      "",
       this.#formatTechnicalEvidence(evidence),
       this.#formatDerivativesEvidence({ derivatives, evidence }),
       this.#formatOiEvidence({ derivatives, evidence }),
@@ -68,6 +70,17 @@ class DiscordSignalFormatter {
   #formatTechnicalEvidence(evidence) {
     return `Technical: RSI ${formatValue(evidence.rsi)}, trend ${formatValue(evidence.ema_alignment)}, `
       + `breakout ${formatValue(evidence.breakout)}, MTF ${formatValue(evidence.multi_timeframe_bias)}`;
+  }
+
+  #formatPositionContext(position_context) {
+    if (!position_context || position_context.has_position !== true) {
+      return `Position: no existing holding | ${formatValue(position_context?.interpretation)}`;
+    }
+
+    return `Position: holding ${formatValue(position_context.quantity)} @ ${formatValue(position_context.average_price)}, `
+      + `allocation ${formatValue(position_context.allocation_percent)}%, `
+      + `P&L ${formatValue(position_context.unrealized_pnl)} | `
+      + `fallback ${formatValue(position_context.delivery_fallback?.is_allowed ? "conditional" : "not allowed")}`;
   }
 
   #formatDerivativesEvidence({ derivatives, evidence }) {

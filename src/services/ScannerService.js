@@ -40,6 +40,8 @@ class ScannerService {
 
   #discord_notifier;
 
+  #portfolio_context_service;
+
   #run_context;
 
   constructor({
@@ -49,6 +51,7 @@ class ScannerService {
     signalLogger,
     obsidianLogger,
     discordNotifier,
+    portfolioContextService,
     runContext = new RunContext(),
   } = {}) {
     if (!signalService || typeof signalService.getSignal !== "function") {
@@ -64,27 +67,40 @@ class ScannerService {
     this.#signal_logger = signalLogger;
     this.#obsidian_logger = obsidianLogger;
     this.#discord_notifier = discordNotifier;
+    this.#portfolio_context_service = portfolioContextService;
     this.#run_context = runContext;
   }
 
   async scanMarket() {
+    const portfolio_scan_context = await this.#preparePortfolioScanContext();
     const scan_context = this.#run_context.createScanContext();
-    const result = this.#createEmptyScanResult(scan_context);
+    const result = this.#createEmptyScanResult(scan_context, portfolio_scan_context.symbols);
     const scan_started_at = Date.now();
 
-    this.#logger.info({ ...scan_context, requestedCount: this.#symbols.length }, "Market scan started");
-    await this.#scanSymbols({ result, scan_context });
+    this.#logger.info({ ...scan_context, requestedCount: result.requestedCount }, "Market scan started");
+    await this.#scanSymbols({ result, scan_context, portfolio_scan_context });
     result.durationMs = Date.now() - scan_started_at;
     this.#logScanCompleted({ result, scan_context });
 
     return result;
   }
 
-  #createEmptyScanResult(scan_context) {
+  async #preparePortfolioScanContext() {
+    if (!this.#portfolio_context_service?.prepareScan) return { symbols: this.#symbols };
+
+    try {
+      return await this.#portfolio_context_service.prepareScan({ baseSymbols: this.#symbols });
+    } catch (error) {
+      this.#logger.error({ error: error.message }, "Failed to load portfolio context; using default symbols");
+      return { symbols: this.#symbols };
+    }
+  }
+
+  #createEmptyScanResult(scan_context, symbols) {
     return {
       ...scan_context,
       scannedCount: 0,
-      requestedCount: this.#symbols.length,
+      requestedCount: symbols.length,
       matches: [],
       failures: [],
       aborted: false,
@@ -92,8 +108,8 @@ class ScannerService {
     };
   }
 
-  async #scanSymbols({ result, scan_context }) {
-    for (const raw_symbol of this.#symbols) {
+  async #scanSymbols({ result, scan_context, portfolio_scan_context }) {
+    for (const raw_symbol of portfolio_scan_context.symbols) {
       const symbol = `NSE:${String(raw_symbol).trim()}`;
       const symbol_context = this.#run_context.createSymbolAnalysisContext({
         scan_id: scan_context.scan_id,
@@ -101,25 +117,38 @@ class ScannerService {
       });
 
       result.scannedCount += 1;
-      if (await this.#processSymbol({ symbol, symbol_context, result })) break;
+      if (await this.#processSymbol({ symbol, symbol_context, result, portfolio_scan_context })) break;
     }
   }
 
-  async #processSymbol({ symbol, symbol_context, result }) {
+  async #processSymbol({ symbol, symbol_context, result, portfolio_scan_context }) {
     this.#logSymbolProcessing({ symbol, symbol_context, result });
 
     try {
       const signal_result = await this.#signal_service.getSignal(symbol, symbol_context);
-      await this.#handleSignalResult({ signal_result, symbol_context, result });
+      const enriched_signal_result = this.#enrichWithPositionContext({ signal_result, portfolio_scan_context });
+      await this.#handleSignalResult({ signal_result: enriched_signal_result, symbol_context, result });
       return false;
     } catch (error) {
       return this.#handleSymbolFailure({ symbol, symbol_context, error, result });
     }
   }
 
+  #enrichWithPositionContext({ signal_result, portfolio_scan_context }) {
+    if (!this.#portfolio_context_service?.getPositionContext) return signal_result;
+
+    const position_context = this.#portfolio_context_service.getPositionContext({
+      symbol: signal_result.symbol,
+      ltp: signal_result.ltp,
+      portfolioScanContext: portfolio_scan_context,
+    });
+
+    return { ...signal_result, position_context };
+  }
+
   #logSymbolProcessing({ symbol, symbol_context, result }) {
     this.#logger.debug(
-      { ...symbol_context, symbol, position: result.scannedCount, requestedCount: this.#symbols.length },
+      { ...symbol_context, symbol, position: result.scannedCount, requestedCount: result.requestedCount },
       "Processing symbol",
     );
   }
@@ -174,6 +203,7 @@ class ScannerService {
       stop_loss: signal_result.stop_loss,
       targets: signal_result.targets,
       confidence_score: signal_result.confidence_score,
+      position_context: signal_result.position_context,
       reason: signal_result.reason || null,
     };
   }

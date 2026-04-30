@@ -125,6 +125,51 @@ describe("scannerService", () => {
     );
   });
 
+  it("scans portfolio symbols and enriches actionable signals with position context", async () => {
+    const signalService = {
+      getSignal: jest
+        .fn()
+        .mockResolvedValueOnce({
+          symbol: "NSE:INFY",
+          signal: "NO_TRADE",
+          ltp: 1500,
+        })
+        .mockResolvedValueOnce({
+          symbol: "NSE:KAYNES",
+          signal: "INTRADAY_LONG",
+          signal_type: "INTRADAY_LONG",
+          ltp: 4500,
+        }),
+    };
+    const portfolioContextService = {
+      prepareScan: jest.fn().mockResolvedValue({ symbols: ["INFY", "KAYNES"] }),
+      getPositionContext: jest.fn().mockReturnValue({
+        has_position: true,
+        source: "local_json",
+      }),
+    };
+    const scannerService = createScannerService({
+      signalService,
+      portfolioContextService,
+      symbols: ["INFY"],
+    });
+
+    const result = await scannerService.scanMarket();
+
+    expect(portfolioContextService.prepareScan).toHaveBeenCalledWith({ baseSymbols: ["INFY"] });
+    expect(signalService.getSignal).toHaveBeenNthCalledWith(2, "NSE:KAYNES", expect.any(Object));
+    expect(result.requestedCount).toBe(2);
+    expect(result.matches).toEqual([
+      expect.objectContaining({
+        symbol: "NSE:KAYNES",
+        position_context: {
+          has_position: true,
+          source: "local_json",
+        },
+      }),
+    ]);
+  });
+
   it("continues scanning when one stock fails", async () => {
     const signalService = {
       getSignal: jest

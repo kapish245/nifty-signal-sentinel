@@ -1,6 +1,6 @@
 # Nifty Signal Sentinel
 
-Nifty Signal Sentinel is a production-oriented Node.js intraday trading scanner built on Zerodha Kite Connect. It currently covers authentication, automatic local token capture for development, token persistence, LTP and historical candle access, market-mode-aware candle policy, multi-timeframe technical analysis, derivatives/OI confirmation, Nifty 50 market scanning, scheduler-based execution, Discord webhook alerts, rate-limit-safe API access, correlation IDs, file-based data boundaries, and structured signal logging.
+Nifty Signal Sentinel is a production-oriented Node.js intraday trading scanner built on Zerodha Kite Connect. It currently covers authentication, automatic local token capture for development, token persistence, LTP and historical candle access, market-mode-aware candle policy, multi-timeframe technical analysis, derivatives/OI confirmation, Nifty 50 plus local portfolio scanning, scheduler-based execution, Discord webhook alerts, rate-limit-safe API access, correlation IDs, file-based data boundaries, and structured signal logging.
 
 The scanner is designed to fail safe when Zerodha historical data is incomplete. If the API returns too few candles for indicator computation, the system returns a safe `NO_TRADE` result instead of crashing.
 
@@ -36,6 +36,7 @@ The application is designed as a stable backend foundation for a rules-based tra
 - Signal engine output mapped to intraday contracts: `INTRADAY_LONG`, `INTRADAY_SHORT`, and `NO_TRADE`
 - Defensive insufficient-data handling for variable historical candle responses
 - Nifty 50 scanning with meaningful-signal filtering
+- Local JSON portfolio/watchlist symbols outside Nifty 50
 - Scheduler-based execution during market hours
 - Discord webhook notifications for actionable signals
 - Rate limiting to stay within Zerodha API limits
@@ -54,6 +55,7 @@ Development completed so far:
 - Phase 4 technical engine is implemented for `minute`, `5minute`, and `15minute` analysis
 - Phase 5 derivatives/OI layer is implemented with Zerodha-backed option-chain normalization
 - Phase 6 Discord webhook notifications are implemented with deterministic templates
+- Phase 7 local JSON portfolio/position awareness is implemented
 - Signal generation now degrades safely to `NO_TRADE` when candle history is insufficient
 - Market-mode and candle-requirement services are implemented
 - File-based repositories exist for candles, market context, and watchlists
@@ -75,6 +77,7 @@ Development completed so far:
 - Option-chain normalization for NFO contracts when derivatives data is available
 - Deterministic OI evidence: PCR, max pain, call/put walls, OI support, and OI resistance
 - Confidence adjustment when derivatives confirm or conflict with the technical signal
+- Position-aware signal context from local JSON holdings
 - Discord webhook alerts for actionable intraday contracts when enabled
 - Queue-based API throttling to avoid burst requests
 - Market-hours-only scheduler using `setInterval`
@@ -114,13 +117,16 @@ Core flow:
 9. If available, derivatives data is normalized and analyzed for OI confirmation
 10. If historical candles are insufficient, a safe `NO_TRADE` response is returned
 11. Otherwise indicators are computed and mapped through technical engines into an intraday signal contract
-12. Actionable signals are printed, logged, and optionally sent to Discord
-13. Scheduler repeats the process during market hours
+12. Local portfolio context is attached when the symbol exists in `data/portfolio.json`
+13. Actionable signals are printed, logged, and optionally sent to Discord
+14. Scheduler repeats the process during market hours
 
 ## Project Structure
 
 ```text
 .
+├── data/
+│   └── portfolio.example.json
 ├── logs/
 ├── package.json
 ├── package-lock.json
@@ -186,12 +192,14 @@ Core flow:
 │   │   ├── CandleRepository.js
 │   │   ├── JsonFileRepository.js
 │   │   ├── MarketContextRepository.js
+│   │   ├── PortfolioRepository.js
 │   │   └── WatchlistRepository.js
 │   ├── scanner
 │   │   └── scannerService.js
 │   ├── scheduler
 │   │   └── scheduler.js
 │   ├── services
+│   │   ├── PortfolioContextService.js
 │   │   ├── RuntimeService.js
 │   │   ├── ScannerService.js
 │   │   ├── SignalAnalysisService.js
@@ -215,6 +223,7 @@ Core flow:
     ├── kiteDerivatives.test.js
     ├── liveMarketData.test.js
     ├── phase4TechnicalEngine.test.js
+    ├── portfolioContextService.test.js
     ├── rateLimiter.test.js
     ├── scanner.test.js
     ├── obsidianLogger.test.js
@@ -247,6 +256,7 @@ RUN_LIVE_KITE_TESTS=false
 ZERODHA_REQUEST_TOKEN=
 ZERODHA_ACCESS_TOKEN=
 SCANNER_INTERVAL_MS=120000
+PORTFOLIO_FILE_PATH=./data/portfolio.json
 ENABLE_DISCORD_ALERTS=false
 DISCORD_WEBHOOK_URL=
 ```
@@ -257,6 +267,7 @@ Notes:
 - `ZERODHA_AUTO_UPDATE_ENV_ON_CALLBACK` enables automatic local `.env` updates after callback handling
 - `ZERODHA_ENV_PATH` lets you override which env file is updated during local development
 - `SCANNER_INTERVAL_MS` defaults to `120000` milliseconds if omitted
+- `PORTFOLIO_FILE_PATH` defaults to `./data/portfolio.json` and is optional
 - `ENABLE_DISCORD_ALERTS=true` enables Discord webhook notifications for actionable signals
 - `DISCORD_WEBHOOK_URL` is required only when Discord alerts are enabled
 
@@ -341,6 +352,7 @@ SCANNER_INTERVAL_MS=180000 npm run scanner:scheduler
 Behavior:
 
 - scans the full configured Nifty 50 universe
+- also scans local JSON holdings and watchlist symbols outside Nifty 50
 - fetches LTP and `minute`, `5minute`, and `15minute` candles through rate-limited clients
 - computes real indicators and price-action evidence
 - fetches and analyzes Zerodha NFO derivatives snapshots when configured
@@ -349,6 +361,7 @@ Behavior:
 - returns `NO_TRADE` with reason `INSUFFICIENT_DATA` when fewer than 50 candles are available
 - returns `NO_TRADE` with reason `MARKET_MODE_BLOCKED` when runtime signal generation is enforced outside live market modes
 - logs only actionable intraday signals
+- attaches position context to actionable signals when a local holding exists
 - sends Discord webhook notifications for actionable signals when enabled
 - skips `NO_TRADE`
 - scans only during `09:15` to `15:30` IST on weekdays
@@ -356,7 +369,7 @@ Behavior:
 
 ## Intraday Signal Contract
 
-The current Phase 6 contract combines deterministic indicators, price-action evidence, multi-timeframe alignment, derivatives/OI confirmation, and optional Discord delivery. It still does not include portfolio awareness, backtesting, order placement, or AI critique.
+The current Phase 7 contract combines deterministic indicators, price-action evidence, multi-timeframe alignment, derivatives/OI confirmation, local position context, and optional Discord delivery. It still does not include Zerodha portfolio sync, backtesting, order placement, or AI critique.
 
 Actionable signal types:
 
@@ -383,6 +396,7 @@ Actionable payloads include:
 - `setup_name`
 - `reason`
 - `invalidation_reason`
+- `position_context`
 - `evidence`
 
 Phase 4 evidence includes:
@@ -404,6 +418,18 @@ Phase 5 derivatives evidence includes:
 - `max_pain`
 - `oi_support`
 - `oi_resistance`
+
+Phase 7 position context includes:
+
+- `has_position`
+- `quantity`
+- `average_price`
+- `position_value`
+- `allocation_percent`
+- `unrealized_pnl`
+- `unrealized_pnl_percent`
+- `delivery_fallback`
+- `interpretation`
 
 ## Candle Policy
 
@@ -441,6 +467,8 @@ Reusable market data and prepared context belong under `data/`, separate from ex
 
 ```text
 data/
+  portfolio.example.json
+  portfolio.json
   market_context/
     YYYY-MM-DD.json
   candles/
@@ -461,9 +489,11 @@ Current repositories:
 
 - `CandleRepository`
 - `MarketContextRepository`
+- `PortfolioRepository`
 - `WatchlistRepository`
 
-`data/` is ignored by git because it can contain market snapshots and local trading context.
+`data/portfolio.json` is ignored by git because it can contain private holdings. Use
+`data/portfolio.example.json` as the template for local setup.
 
 ## Logging
 
@@ -564,6 +594,39 @@ Discord behavior:
 - does not stop the scanner if Discord delivery fails
 - skips sending when `ENABLE_DISCORD_ALERTS=false`
 
+### Local portfolio JSON
+
+Phase 7 supports local portfolio and watchlist context through `data/portfolio.json`.
+
+```json
+{
+  "capital": 1000000,
+  "holdings": [
+    {
+      "symbol": "KAYNES",
+      "quantity": 10,
+      "average_price": 4200,
+      "product": "DELIVERY",
+      "notes": "Existing long-term holding"
+    }
+  ],
+  "watchlist": [
+    {
+      "symbol": "CDSL",
+      "reason": "Track outside Nifty 50"
+    }
+  ]
+}
+```
+
+Portfolio behavior:
+
+- merges Nifty 50 with local holdings and watchlist symbols
+- removes duplicate symbols after normalization
+- attaches holding quantity, average price, allocation, and P&L to actionable signals
+- treats delivery fallback as conditional context, not permission to ignore an intraday stop loss
+- skips portfolio context safely when `data/portfolio.json` is missing
+
 ### Access token source precedence
 
 Scanner runtime resolves token in this order:
@@ -647,6 +710,7 @@ The suite currently covers:
 - Phase 4 VWAP, ATR, MACD, support/resistance, breakout, multi-timeframe analysis, and ATR-based risk
 - Phase 5 derivatives normalization, OI metrics, confirmation/conflict, and safe fallback
 - Phase 6 Discord webhook formatting, delivery, and scanner failure isolation
+- Phase 7 portfolio JSON loading, scanner symbol merge, and position context enrichment
 - signal engine logic
 - signal service integration
 - scanner filtering behavior
@@ -684,7 +748,7 @@ Live signal behavior:
 - Phase 4: intraday technical signal engine with multi-timeframe analysis, VWAP, ATR, MACD, RSI, EMA, volume, price action, entry, stop, targets, and confidence. First implementation slice completed.
 - Phase 5: derivatives/OI layer with option chain, OI buildup, PCR, max pain, and OI support/resistance. First implementation slice completed.
 - Phase 6: Discord webhook notifications using deterministic templates, not AI. First implementation slice completed.
-- Phase 7: portfolio and position awareness using JSON first, then optional Zerodha holdings/positions.
+- Phase 7: portfolio and position awareness using local JSON first. First implementation slice completed.
 - Phase 8: backtesting and 10-15 non-overfitted scenario tests.
 - Phase 9: post-market review and learning journal.
 - Phase 10: macro, news, company-event, fundamentals, and AI critique layer.

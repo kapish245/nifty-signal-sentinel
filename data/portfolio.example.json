@@ -1,0 +1,18 @@
+{
+  "capital": 1000000,
+  "holdings": [
+    {
+      "symbol": "KAYNES",
+      "quantity": 10,
+      "average_price": 4200,
+      "product": "DELIVERY",
+      "notes": "Example existing holding outside Nifty 50"
+    }
+  ],
+  "watchlist": [
+    {
+      "symbol": "CDSL",
+      "reason": "Example additional scanner symbol outside Nifty 50"
+    }
+  ]
+}

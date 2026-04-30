@@ -47,6 +47,7 @@ function createSignalLogger({
         setup_name: signalPayload.setup_name,
         reason: signalPayload.reason,
         invalidation_reason: signalPayload.invalidation_reason,
+        position_context: signalPayload.position_context,
         evidence: signalPayload.evidence,
         indicators: signalPayload.indicators,
       };
