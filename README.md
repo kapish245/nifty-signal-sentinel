@@ -83,7 +83,7 @@ Development completed so far:
 - Market-hours-only scheduler using `setInterval`
 - JSON log files written per trading day
 - Development auth scripts for login URL generation and auto token capture
-- CLI entry points for one-time scans and scheduled scanning
+- CLI entry points for one-time scans, scheduled scanning, and signal backtesting
 - Test coverage for auth, indicators, signal engine, signal service, scanner behavior, rate limiting, and guarded live Zerodha integrations
 
 ## Architecture
@@ -155,6 +155,9 @@ Core flow:
 │   │   ├── kiteDerivatives.js
 │   │   └── kiteHistorical.js
 │   ├── engines
+│   │   ├── backtest
+│   │   │   ├── BacktestMetricsEngine.js
+│   │   │   └── BacktestOutcomeEngine.js
 │   │   ├── derivatives
 │   │   │   ├── DerivativesConfirmationEngine.js
 │   │   │   ├── DerivativesOiEngine.js
@@ -199,6 +202,9 @@ Core flow:
 │   ├── scheduler
 │   │   └── scheduler.js
 │   ├── services
+│   │   ├── BacktestService.js
+│   │   ├── BacktestSignalLoader.js
+│   │   ├── HistoricalBacktestCandleProvider.js
 │   │   ├── PortfolioContextService.js
 │   │   ├── RuntimeService.js
 │   │   ├── ScannerService.js
@@ -208,6 +214,7 @@ Core flow:
 │   │   ├── SignalContractBuilder.js
 │   │   └── signalEngine.js
 │   ├── scripts
+│   │   ├── backtestSignals.js
 │   │   └── printLoginUrl.js
 │   └── utils
 │       ├── checksum.js
@@ -216,6 +223,8 @@ Core flow:
 └── tests
     ├── api.test.js
     ├── auth.test.js
+    ├── backtestOutcomeEngine.test.js
+    ├── backtestSignalLoader.test.js
     ├── derivativesOiEngine.test.js
     ├── discordNotification.test.js
     ├── envFile.test.js
@@ -348,6 +357,20 @@ Run the scheduler every 3 minutes instead of the default 2:
 ```bash
 SCANNER_INTERVAL_MS=180000 npm run scanner:scheduler
 ```
+
+Backtest generated signals for a day:
+
+```bash
+npm run backtest:signals -- --date=2026-04-30
+```
+
+Backtest behavior:
+
+- reads `logs/YYYY-MM-DD.json` first, then falls back to `logs/obsidian/YYYY-MM-DD.md`
+- fetches minute candles through Zerodha for each logged signal symbol
+- evaluates entry, stop loss, targets, no-entry, open-at-end, and ambiguous stop/target candles
+- writes the full report to `logs/backtests/YYYY-MM-DD.json`
+- prints summary metrics to the terminal
 
 Behavior:
 
@@ -711,6 +734,7 @@ The suite currently covers:
 - Phase 5 derivatives normalization, OI metrics, confirmation/conflict, and safe fallback
 - Phase 6 Discord webhook formatting, delivery, and scanner failure isolation
 - Phase 7 portfolio JSON loading, scanner symbol merge, and position context enrichment
+- Phase 8 backtest outcomes, metrics, Obsidian parsing, and non-overfitted scenarios
 - signal engine logic
 - signal service integration
 - scanner filtering behavior
@@ -737,7 +761,7 @@ Live signal behavior:
 - Quote calls should stay around `1 request/sec`
 - Historical calls should stay around `2-3 requests/sec`
 - Zerodha historical API uses date ranges and does not guarantee a fixed candle count
-- Current intraday strategy logic is deterministic and improving, but still needs Phase 8 backtesting before trust
+- Current intraday strategy logic is deterministic and improving; backtests are measurement, not proof of profitability
 - The application currently uses REST polling only
 - WebSockets are not implemented yet
 - OI-specific strategy logic is implemented as a deterministic confirmation layer, not a standalone signal source
@@ -749,7 +773,7 @@ Live signal behavior:
 - Phase 5: derivatives/OI layer with option chain, OI buildup, PCR, max pain, and OI support/resistance. First implementation slice completed.
 - Phase 6: Discord webhook notifications using deterministic templates, not AI. First implementation slice completed.
 - Phase 7: portfolio and position awareness using local JSON first. First implementation slice completed.
-- Phase 8: backtesting and 10-15 non-overfitted scenario tests.
+- Phase 8: backtesting and 10-15 non-overfitted scenario tests. First implementation slice completed.
 - Phase 9: post-market review and learning journal.
 - Phase 10: macro, news, company-event, fundamentals, and AI critique layer.
 

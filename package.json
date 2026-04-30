@@ -9,6 +9,7 @@
     "auth:auto": "ZERODHA_AUTO_EXCHANGE_ON_CALLBACK=true ZERODHA_AUTO_UPDATE_ENV_ON_CALLBACK=true node src/app.js",
     "scanner:once": "node src/runner.js --once",
     "scanner:scheduler": "node src/runner.js",
+    "backtest:signals": "node src/scripts/backtestSignals.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:live": "DOTENV_CONFIG_PATH=.env RUN_LIVE_KITE_TESTS=true node -r dotenv/config ./node_modules/jest/bin/jest.js --runInBand tests/api.test.js tests/liveMarketData.test.js"

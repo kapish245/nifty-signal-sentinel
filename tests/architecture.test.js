@@ -7,6 +7,9 @@ const ScannerController = require("../src/controllers/ScannerController");
 const { PortfolioRepository } = require("../src/repositories/PortfolioRepository");
 const { PortfolioContextService } = require("../src/services/PortfolioContextService");
 const RuntimeService = require("../src/services/RuntimeService");
+const { BacktestOutcomeEngine } = require("../src/engines/backtest/BacktestOutcomeEngine");
+const { BacktestMetricsEngine } = require("../src/engines/backtest/BacktestMetricsEngine");
+const { BacktestService } = require("../src/services/BacktestService");
 const {
   IntradaySignalEngine,
 } = require("../src/engines/technical/IntradaySignalEngine");
@@ -50,6 +53,14 @@ describe("hexagonal architecture boundaries", () => {
 
     expect(portfolioRepository).toEqual(expect.any(PortfolioRepository));
     expect(new PortfolioContextService({ portfolioRepository })).toEqual(expect.any(PortfolioContextService));
+  });
+
+  it("keeps backtesting under engine and service boundaries", () => {
+    const candleProvider = { getCandlesForSignal: jest.fn() };
+
+    expect(new BacktestOutcomeEngine()).toEqual(expect.any(BacktestOutcomeEngine));
+    expect(new BacktestMetricsEngine()).toEqual(expect.any(BacktestMetricsEngine));
+    expect(new BacktestService({ candleProvider })).toEqual(expect.any(BacktestService));
   });
 
   it("lets scanner controller run through runtime service", async () => {
